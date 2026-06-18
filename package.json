@@ -1,0 +1,66 @@
+{
+  "name": "msapp",
+  "version": "1.0.0",
+  "description": "インベーダー Electron アプリ",
+  "main": "src/electron/main.js",
+  "author": "degima.cc",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable nsis --x64 --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^35.1.5",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "cc.degima.msapp",
+    "productName": "Invaders",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "myapp.exe"
+    },
+    "nsis": {
+      "artifactName": "setup.exe",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "warningsAsErrors": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.games"
+    },
+    "dmg": {
+      "artifactName": "myapp.dmg"
+    }
+  }
+}

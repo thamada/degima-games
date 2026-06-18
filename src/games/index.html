@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ゲーム</title>
+<style>
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  display: flex;
+  flex-direction: column;
+}
+
+.tab-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  height: 32px;
+  padding: 0 12px;
+  background: #111;
+  border-bottom: 1px solid #222;
+}
+
+.tabs {
+  display: flex;
+  margin-left: auto;
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: none;
+  background: none;
+  color: #666;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.tab::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.tab:hover {
+  color: #aaa;
+}
+
+.tab:focus-visible {
+  outline: 1px solid #555;
+  outline-offset: -1px;
+}
+
+.tab.active {
+  color: #6ee06e;
+}
+
+.tab.active::after {
+  background: #3cb83c;
+}
+
+.panels {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.panel {
+  display: none;
+  height: 100%;
+}
+
+.panel.active {
+  display: block;
+}
+
+.panel iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: #000;
+}
+</style>
+</head>
+<body>
+<header class="tab-bar">
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab active" role="tab" aria-selected="true" data-target="invaders">インベーダー</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" data-target="pong">ポン</button>
+  </nav>
+</header>
+<div class="panels">
+  <div id="panel-invaders" class="panel active" role="tabpanel">
+    <iframe src="invaders.html" title="インベーダー"></iframe>
+  </div>
+  <div id="panel-pong" class="panel" role="tabpanel">
+    <iframe data-src="pong.html" title="ポン"></iframe>
+  </div>
+</div>
+<script>
+const tabs = document.querySelectorAll(".tab");
+
+function ensureIframeLoaded(panel) {
+  const iframe = panel.querySelector("iframe");
+  if (iframe.dataset.src && !iframe.src) {
+    iframe.src = iframe.dataset.src;
+  }
+  return iframe;
+}
+
+function switchTab(target) {
+  tabs.forEach((tab) => {
+    const active = tab.dataset.target === target;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active);
+  });
+
+  document.querySelectorAll(".panel").forEach((panel) => {
+    const active = panel.id === "panel-" + target;
+    panel.classList.toggle("active", active);
+    if (active) {
+      ensureIframeLoaded(panel).focus();
+    }
+  });
+}
+
+tabs.forEach((tab) => {
+  tab.addEventListener("click", () => switchTab(tab.dataset.target));
+});
+</script>
+</body>
+</html>

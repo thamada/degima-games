@@ -1,0 +1,90 @@
+# 設計仕様書
+
+> **注意**: 本ドキュメントは設計仕様書です。変更履歴や実装の詳細な変更点については、`ChangeLog.md`を参照してください。本ドキュメントでは、現在のシステムの設計と仕様を記述します。
+
+## 概要
+
+msapp は Electron 製のレトロゲームアプリです。単一ウィンドウ内のタブで「インベーダー」と「ポン」を切り替えてプレイできます。ゲーム本体は HTML5 Canvas 上のスタンドアロン HTML として実装し、Electron から iframe 経由で読み込みます。
+
+## ディレクトリ構成
+
+```
+msapp/
+├── Makefile              # ローカル Node 取得・開発/ビルド用
+├── package.json          # npm スクリプト・electron-builder 設定
+├── src/
+│   ├── electron/
+│   │   └── main.js       # Electron メインプロセス
+│   └── games/
+│       ├── index.html    # タブ付きシェル（起動時エントリ）
+│       ├── invaders.html # インベーダーゲーム
+│       └── pong.html     # ポンゲーム
+└── doc/
+    ├── design.md         # 本ドキュメント
+    └── ChangeLog.md      # 変更履歴
+```
+
+## アーキテクチャ
+
+### Electron メインプロセス
+
+- エントリポイント: `src/electron/main.js`（`package.json` の `main` で指定）
+- 起動時に `src/games/index.html` を `loadFile` で表示
+- ウィンドウサイズ: 700×580、タイトル: 「ゲーム」
+- `nodeIntegration: false`、`contextIsolation: true` でレンダラーをサンドボックス化
+
+### ゲームシェル（index.html）
+
+- 高さ 32px のコンパクトなタブバーを画面上部に配置
+- 各ゲームは iframe で読み込み（ゲーム間でスクリプト・状態を分離）
+- 起動時は「インベーダー」を表示。「ポン」は初回タブ選択時に遅延読み込み（`data-src`）
+- シェル全体および iframe 領域は `overflow: hidden` とし、ページスクロールを発生させない
+
+### 各ゲーム HTML
+
+- Canvas 解像度: 640×480（内部描画バッファ）
+- 表示サイズは CSS の `max-width` / `max-height` でウィンドウ内に収まるよう自動縮小
+- レトロ風 UI（黒背景・緑のネオン風ボーダー）
+- ゲーム操作キー（矢印キー・スペース等）では `preventDefault()` を呼び、ブラウザのスクロール動作を抑止
+
+## ゲーム仕様
+
+### インベーダー（invaders.html）
+
+| 項目 | 内容 |
+|------|------|
+| 操作 | ←→ 移動、スペース 発射、R リスタート（ゲームオーバー時） |
+| ルール | インベーダーを撃破してスコアを稼ぐ。被弾でライフ減少、全滅または侵入でゲームオーバー |
+| ウェーブ | クリアごとに敵数・速度が増加 |
+
+### ポン（pong.html）
+
+| 項目 | 内容 |
+|------|------|
+| 操作 | ↑↓ 移動（左パドル）、R リスタート |
+| ルール | 右側は CPU パドル。相手側ゴールで得点 |
+| 備考 | ボール速度はラケット反射のたびにわずかに増加 |
+
+## UI 仕様（タブ）
+
+- 右寄せのテキストタブ 2 件（インベーダー / ポン）
+- 非選択: グレー文字（`#666`）
+- 選択中: 明るいグリーン文字（`#6ee06e`）＋下線インジケーター（`#3cb83c`）
+- フォント: 等幅系（SF Mono / Menlo / Consolas）
+
+## ビルド・実行
+
+| コマンド | 説明 |
+|----------|------|
+| `make dev` | 依存関係インストール後、`npm start` で Electron 起動 |
+| `make build` | `electron-builder` による配布物生成（Windows portable/nsis、macOS dmg） |
+| `make clean` | `.local`、`node_modules`、`dist`、`build` を削除 |
+
+Makefile は `.local` 配下に Node.js v22.14.0 を取得し、プロジェクトローカルで npm を実行します。
+
+## 配布設定（electron-builder）
+
+- `appId`: `cc.degima.msapp`
+- `productName`: `Invaders`
+- 同梱ファイル: `src/**/*`
+- 出力先: `dist/`

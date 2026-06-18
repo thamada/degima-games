@@ -4,9 +4,10 @@
 <meta charset="UTF-8">
 <title>インベーダー</title>
 <style>
-body{margin:0;background:#000;display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;font-family:monospace;color:#0f0}
-canvas{border:2px solid #0f0;box-shadow:0 0 20px #0f0}
-#info{margin-top:10px}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;gap:4px;font-family:monospace;color:#0f0}
+canvas{border:2px solid #0f0;box-shadow:0 0 20px #0f0;max-width:100%;max-height:calc(100% - 1.25rem);width:auto;height:auto;display:block}
+#info{flex-shrink:0;font-size:11px;line-height:1.2;margin:0}
 </style>
 </head>
 <body>
@@ -198,7 +199,7 @@ function loop() {
 
 document.addEventListener("keydown", e => {
   keys[e.code] = true;
-  if (e.code === "Space") e.preventDefault();
+  if (["ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
   if (e.code === "KeyR" && gameOver) init(true);
 });
 
