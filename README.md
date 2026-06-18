@@ -3,7 +3,7 @@
 Windows 向けデスクトップアプリのインストーラーを自作するための、Electron ベースの基本的な開発環境です。  
 macOS 向けインストーラー（DMG）の作成にも対応しています。
 
-サンプルとして、タブで切り替えられるレトロゲーム（インベーダー・ポン）が同梱されています。アプリ本体やインストーラー設定を差し替えることで、自分用の Windows / macOS アプリをビルドできます。
+サンプルとして、タブで切り替えられるレトロゲーム（インベーダー・ポン・メビウス）が同梱されています。アプリ本体やインストーラー設定を差し替えることで、自分用の Windows / macOS アプリをビルドできます。
 
 ## 技術スタック
 
@@ -23,7 +23,8 @@ degima-windows-installer-dev/
 │   └── games/
 │       ├── index.html    # タブ付きシェル（起動時エントリ）
 │       ├── invaders.html # インベーダーゲーム
-│       └── pong.html     # ポンゲーム
+│       ├── pong.html     # ポンゲーム
+│       └── mevius.html   # メビウス（縦スクロール STG）
 └── doc/
     ├── design.md         # 設計仕様
     └── ChangeLog.md      # 変更履歴
@@ -31,7 +32,9 @@ degima-windows-installer-dev/
 
 ## サンプルアプリ
 
-Electron 起動時は `src/games/index.html` が読み込まれ、画面上部のタブで「インベーダー」と「ポン」を切り替えられます。
+Electron 起動時は `src/games/index.html` が読み込まれ、画面上部のタブで「インベーダー」「ポン」「メビウス」を切り替えられます。
+
+![メビウス ゲームプレイ画面](doc/screenshots/mevius.png)
 
 | 項目 | 内容 |
 |------|------|
