@@ -131,15 +131,35 @@ function update() {
   }
   for (const inv of aliveInvaders) inv.x += dir * speed;
 
-  if (Math.random() < 0.004 + wave * 0.001) {
-    const shooter = aliveInvaders[Math.floor(Math.random() * aliveInvaders.length)];
+  const bottomInvaders = [];
+  const bottomByCol = {};
+  for (const inv of aliveInvaders) {
+    const col = Math.round(inv.x / 40);
+    if (!bottomByCol[col] || inv.y > bottomByCol[col].y) bottomByCol[col] = inv;
+  }
+  for (const inv of Object.values(bottomByCol)) bottomInvaders.push(inv);
+
+  let shootChance = 0.018 + wave * 0.005;
+  if (aliveInvaders.length <= 20) shootChance *= 1.4;
+  if (aliveInvaders.length <= 10) shootChance *= 1.3;
+
+  function enemyShoot(shooter) {
     enemyBullets.push({
       x: shooter.x + shooter.w / 2 - 2,
       y: shooter.y + shooter.h,
       w: 4,
       h: 10,
-      speed: 3 + wave * 0.4
+      speed: 5 + wave * 0.6
     });
+  }
+
+  if (Math.random() < shootChance && bottomInvaders.length > 0) {
+    const shooter = bottomInvaders[Math.floor(Math.random() * bottomInvaders.length)];
+    enemyShoot(shooter);
+    if (wave >= 2 && Math.random() < 0.35) {
+      const second = bottomInvaders[Math.floor(Math.random() * bottomInvaders.length)];
+      if (second !== shooter || bottomInvaders.length > 1) enemyShoot(second);
+    }
   }
 
   if (invaders.some(v => v.alive && v.y + v.h >= player.y)) {
