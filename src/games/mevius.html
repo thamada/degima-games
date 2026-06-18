@@ -45,7 +45,7 @@ let scrollY, score, lives, wave, gameOver, keys = {}, shootCooldown = 0, bombCoo
 let explosion = null, spawnTimer = 0, groundSpawnTimer = 0;
 
 function init(resetScore) {
-  player = { x: W / 2 - 12, y: H - 70, w: 24, h: 20, speed: 4.5 };
+  player = { x: W / 2 - 16, y: H - 76, w: 32, h: 36, speed: 4.5, bank: 0, afterburner: 0, afterburnerFrame: 0 };
   zappers = [];
   blasters = [];
   airEnemies = [];
@@ -214,6 +214,9 @@ function updateExplosion() {
       } else {
         player.x = W / 2 - player.w / 2;
         player.y = H - 70;
+        player.bank = 0;
+        player.afterburner = 0;
+        player.afterburnerFrame = 0;
       }
     }
   }
@@ -231,6 +234,21 @@ function updateBurstParticles() {
   }
 }
 
+function updatePlayerBank() {
+  const maxBank = 0.38;
+  let target = 0;
+  if (keys.ArrowLeft) target = -maxBank;
+  else if (keys.ArrowRight) target = maxBank;
+  player.bank += (target - player.bank) * 0.14;
+}
+
+function updatePlayerAfterburner() {
+  const target = keys.ArrowUp ? 1 : 0;
+  player.afterburner += (target - player.afterburner) * 0.18;
+  if (player.afterburner > 0.04) player.afterburnerFrame++;
+  else player.afterburnerFrame = 0;
+}
+
 function update() {
   if (explosion) {
     updateExplosion();
@@ -245,6 +263,8 @@ function update() {
   if (keys.ArrowRight) player.x = Math.min(W - player.w - 8, player.x + player.speed);
   if (keys.ArrowUp) player.y = Math.max(H * 0.35, player.y - player.speed);
   if (keys.ArrowDown) player.y = Math.min(H - player.h - 8, player.y + player.speed);
+  updatePlayerBank();
+  updatePlayerAfterburner();
 
   if (shootCooldown > 0) shootCooldown--;
   if (bombCooldown > 0) bombCooldown--;
@@ -636,18 +656,139 @@ function drawBackground() {
   ctx.fillRect(0, 0, W, H);
 }
 
-function drawPlayer(x, y, w, h) {
-  ctx.fillStyle = "#0ff";
+function drawAfterburner(sx, sy, intensity, frame) {
+  const flicker = 0.78 + Math.sin(frame * 0.55) * 0.14 + Math.sin(frame * 1.35) * 0.08;
+  const len = (11 + Math.sin(frame * 0.85) * 3.5) * sy * intensity * flicker;
+  const halfW = (2.6 + Math.sin(frame * 0.65) * 0.55) * sx * intensity;
+  const nozzleY = 13.2 * sy;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  const grad = ctx.createRadialGradient(0, nozzleY, 0, 0, nozzleY + len * 0.45, len * 0.95);
+  grad.addColorStop(0, `rgba(255, 255, 230, ${0.95 * intensity})`);
+  grad.addColorStop(0.22, `rgba(255, 195, 50, ${0.88 * intensity})`);
+  grad.addColorStop(0.55, `rgba(255, 90, 25, ${0.55 * intensity})`);
+  grad.addColorStop(1, "rgba(255, 50, 0, 0)");
+  ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.moveTo(x + w / 2, y);
-  ctx.lineTo(x + w, y + h * 0.7);
-  ctx.lineTo(x + w * 0.65, y + h);
-  ctx.lineTo(x + w * 0.35, y + h);
-  ctx.lineTo(x, y + h * 0.7);
+  ctx.moveTo(-halfW, nozzleY);
+  ctx.quadraticCurveTo(-halfW * 1.7, nozzleY + len * 0.5, 0, nozzleY + len);
+  ctx.quadraticCurveTo(halfW * 1.7, nozzleY + len * 0.5, halfW, nozzleY);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = "#088";
-  ctx.fillRect(x + w / 2 - 2, y + h * 0.5, 4, h * 0.35);
+
+  ctx.fillStyle = `rgba(255, 248, 210, ${0.92 * intensity})`;
+  ctx.beginPath();
+  ctx.ellipse(0, nozzleY + 0.5 * sy, halfW * 0.5, 2 * sy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = `rgba(255, 120, 30, ${0.35 * intensity})`;
+  for (let i = 0; i < 4; i++) {
+    const px = Math.sin(frame * 0.4 + i * 2.1) * halfW * 0.9;
+    const py = nozzleY + len * (0.35 + i * 0.14) + Math.sin(frame + i) * sy;
+    ctx.beginPath();
+    ctx.arc(px, py, (1.2 + (i % 2) * 0.6) * sx, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawPlayer(x, y, w, h, bank = 0, afterburner = 0, afterburnerFrame = 0) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const sx = w / 32;
+  const sy = h / 36;
+
+  ctx.save();
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + h * 0.34, w * 0.42, h * 0.12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.translate(cx, cy);
+  ctx.rotate(bank);
+
+  if (afterburner > 0.04) drawAfterburner(sx, sy, afterburner, afterburnerFrame);
+
+  ctx.fillStyle = "#4f5868";
+  ctx.beginPath();
+  ctx.moveTo(-4 * sx, -2 * sy);
+  ctx.lineTo(-15 * sx, 8 * sy);
+  ctx.lineTo(-4 * sx, 6 * sy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(4 * sx, -2 * sy);
+  ctx.lineTo(15 * sx, 8 * sy);
+  ctx.lineTo(4 * sx, 6 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  const fuselage = ctx.createLinearGradient(-8 * sx, 0, 8 * sx, 0);
+  fuselage.addColorStop(0, "#5c6678");
+  fuselage.addColorStop(0.45, "#b8c2d4");
+  fuselage.addColorStop(1, "#5c6678");
+  ctx.fillStyle = fuselage;
+  ctx.beginPath();
+  ctx.moveTo(0, -16 * sy);
+  ctx.lineTo(3.5 * sx, -6 * sy);
+  ctx.lineTo(3 * sx, 10 * sy);
+  ctx.lineTo(5 * sx, 14 * sy);
+  ctx.lineTo(0, 12 * sy);
+  ctx.lineTo(-5 * sx, 14 * sy);
+  ctx.lineTo(-3 * sx, 10 * sy);
+  ctx.lineTo(-3.5 * sx, -6 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#3f4654";
+  ctx.beginPath();
+  ctx.moveTo(-7 * sx, 8 * sy);
+  ctx.lineTo(-10 * sx, 14 * sy);
+  ctx.lineTo(-3 * sx, 10 * sy);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(7 * sx, 8 * sy);
+  ctx.lineTo(10 * sx, 14 * sy);
+  ctx.lineTo(3 * sx, 10 * sy);
+  ctx.fill();
+
+  ctx.fillStyle = "#353b47";
+  ctx.fillRect(-1.5 * sx, 9 * sy, 3 * sx, 5 * sy);
+
+  ctx.fillStyle = "#4678a8";
+  ctx.beginPath();
+  ctx.ellipse(0, -3 * sy, 3.2 * sx, 4.5 * sy, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(190, 230, 255, 0.55)";
+  ctx.beginPath();
+  ctx.ellipse(-0.8 * sx, -4 * sy, 1.4 * sx, 2 * sy, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#2e343f";
+  ctx.beginPath();
+  ctx.moveTo(0, -16 * sy);
+  ctx.lineTo(2 * sx, -11 * sy);
+  ctx.lineTo(-2 * sx, -11 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(230, 238, 248, 0.55)";
+  ctx.lineWidth = Math.max(0.8, sx);
+  ctx.beginPath();
+  ctx.moveTo(-4 * sx, -2 * sy);
+  ctx.lineTo(-15 * sx, 8 * sy);
+  ctx.moveTo(4 * sx, -2 * sy);
+  ctx.lineTo(15 * sx, 8 * sy);
+  ctx.stroke();
+
+  ctx.fillStyle = "#252930";
+  ctx.fillRect(-1.2 * sx, 12 * sy, 2.4 * sx, 2 * sy);
+
+  ctx.restore();
 }
 
 function drawAirEnemy(e) {
@@ -829,7 +970,7 @@ function drawLivesHUD() {
   const y = 10;
   const totalW = lives > 0 ? lives * iconW + (lives - 1) * gap : 0;
   const startX = W - padding - totalW;
-  ctx.fillStyle = "#0ff";
+  ctx.fillStyle = "#8ab4d4";
   ctx.font = "11px monospace";
   ctx.textAlign = "right";
   ctx.fillText("LIVES", W - padding, y - 2);
@@ -847,7 +988,7 @@ function drawAirBullet(b) {
 function drawGroundShell(b) {
   const cx = b.x + b.w / 2;
   const cy = b.y + b.h / 2;
-  const angle = Math.atan2(b.vy, b.vx) + Math.PI / 2;
+  const angle = Math.atan2(b.vy, b.vx);
   const speed = Math.hypot(b.vx, b.vy) || 1;
 
   ctx.save();
@@ -867,31 +1008,31 @@ function drawGroundShell(b) {
   ctx.shadowColor = "rgba(255, 120, 40, 0.85)";
   ctx.shadowBlur = 12;
 
-  const body = ctx.createLinearGradient(-6, 0, 6, 0);
-  body.addColorStop(0, "#7a4a12");
+  const body = ctx.createLinearGradient(-8, 0, 10, 0);
+  body.addColorStop(0, "#8b4513");
   body.addColorStop(0.35, "#d4a017");
   body.addColorStop(0.65, "#f0d060");
-  body.addColorStop(1, "#8b4513");
+  body.addColorStop(1, "#7a4a12");
   ctx.fillStyle = body;
-  roundRect(-6, -8, 12, 18, 3);
+  roundRect(-8, -6, 14, 12, 3);
   ctx.fill();
 
   ctx.shadowBlur = 0;
 
   ctx.fillStyle = "#2a2a2a";
   ctx.beginPath();
-  ctx.moveTo(-5, -8);
-  ctx.lineTo(0, -15);
-  ctx.lineTo(5, -8);
+  ctx.moveTo(6, -5);
+  ctx.lineTo(16, 0);
+  ctx.lineTo(6, 5);
   ctx.closePath();
   ctx.fill();
 
   ctx.fillStyle = "#c45c26";
-  ctx.fillRect(-5, 6, 10, 4);
+  ctx.fillRect(-10, -4, 4, 8);
 
   ctx.strokeStyle = "rgba(255, 240, 180, 0.7)";
   ctx.lineWidth = 1.2;
-  roundRect(-6, -8, 12, 18, 3);
+  roundRect(-8, -6, 14, 12, 3);
   ctx.stroke();
 
   ctx.restore();
@@ -959,7 +1100,7 @@ function draw() {
 
   drawEnemyBullets();
 
-  if (!explosion) drawPlayer(player.x, player.y, player.w, player.h);
+  if (!explosion) drawPlayer(player.x, player.y, player.w, player.h, player.bank, player.afterburner, player.afterburnerFrame);
 
   drawBursts();
   drawExplosion();
