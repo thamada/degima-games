@@ -243,4 +243,4 @@ degima-games/
 | `make run` | 上記と同じ |
 | `make clean` | `.local`、`node_modules` を削除 |
 
-Makefile は `.local` 配下に Node.js v22.14.0 を取得し、プロジェクトローカルで npm を実行します。`serve` が `games/` ディレクトリを静的配信します。
+Makefile は `.local` 配下に Node.js v22.14.0 を取得し、プロジェクトローカルで npm を実行します。`serve` が `games/` ディレクトリを静的配信します（`-n` / `--no-clipboard` により URL のクリップボードコピーを行わない。Docker 等のヘッドレス環境向け）。

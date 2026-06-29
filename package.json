@@ -5,8 +5,8 @@
   "author": "degima.cc",
   "license": "Apache-2.0",
   "scripts": {
-    "start": "serve games -l 3000",
-    "dev": "serve games -l 3000"
+    "start": "serve games -l 3000 -n",
+    "dev": "serve games -l 3000 -n"
   },
   "devDependencies": {
     "serve": "^14.2.4"
