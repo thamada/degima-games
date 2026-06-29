@@ -30,7 +30,7 @@ canvas {
 </head>
 <body>
 <canvas id="c" width="640" height="480"></canvas>
-<div id="info">←→↑↓ 移動 | スペース 対空 | X 対地 | アイテムで武器強化・バリア・無敵・誘導弾・山火事 | R リスタート</div>
+<div id="info">←→↑↓ 移動 | スペース 対空 | X 対地 | アイテムで武器強化・バリア・無敵・誘導弾・山火事・Ξ | R リスタート</div>
 <script>
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
@@ -45,21 +45,85 @@ let scrollY, score, lives, wave, gameOver, keys = {}, shootCooldown = 0, bombCoo
 let explosion = null, spawnTimer = 0, groundSpawnTimer = 0, wildfire = null, legendFadeTimer = 0;
 let wildfireParticles = [];
 let wildfireItemDelayTimer = 0;
+let xiItemDelayTimer = 0;
 const WEAPON_DURATION = 540;
 const INVINCIBLE_DURATION = 480;
 const WILDFIRE_DURATION = 180;
 const LEGEND_FADE_FRAMES = 600;
 const WILDFIRE_ITEM_DELAY_FRAMES = 600;
+const XI_ITEM_DELAY_FRAMES = 900;
 const POWERUP_DROP_RATE = 0.17;
 const MAX_BARRIER = 8;
+const XI_DURATION = 900;
+const XI_BARRIER = 16;
+const XI_FUNNEL_LEVEL = 10;
+const XI_FUNNEL_SPEC = { count: 20, speed: 32, vy: -22, turnRate: 0.28, damage: 4, interval: 6 };
+const FIGHTER_SIZE = { w: 32, h: 36 };
+const XI_SIZE = { w: 48, h: 52 };
 const FUNNEL_LEVELS = [
   null,
   { count: 2, speed: 6, vy: -4.5, turnRate: 0.15, damage: 2, interval: 22 },
   { count: 4, speed: 12, vy: -9, turnRate: 0.15, damage: 2, interval: 22 },
   { count: 6, speed: 18, vy: -13.5, turnRate: 0.18, damage: 2, interval: 20 },
-  { count: 8, speed: 24, vy: -18, turnRate: 0.22, damage: 3, interval: 18 }
+  { count: 8, speed: 24, vy: -18, turnRate: 0.22, damage: 3, interval: 18 },
+  { count: 10, speed: 26, vy: -19, turnRate: 0.24, damage: 3, interval: 16 },
+  { count: 12, speed: 28, vy: -20, turnRate: 0.25, damage: 3, interval: 14 },
+  { count: 14, speed: 29, vy: -21, turnRate: 0.26, damage: 4, interval: 12 },
+  { count: 16, speed: 30, vy: -21.5, turnRate: 0.27, damage: 4, interval: 10 },
+  { count: 18, speed: 31, vy: -22, turnRate: 0.27, damage: 4, interval: 8 },
+  { count: 20, speed: 32, vy: -22, turnRate: 0.28, damage: 4, interval: 6 }
 ];
-const FUNNEL_ITEM_COLORS = ["#f88", "#f66", "#f44", "#ffd060"];
+const FUNNEL_ITEM_COLORS = ["#f88", "#f66", "#f44", "#ffd060", "#fff8a0"];
+const RAD_LEVELS = [
+  null,
+  {
+    cooldown: 5,
+    pierce: true,
+    beams: [{ ox: 0, oy: 0, w: 8, h: 20, speed: 10, damage: 2 }]
+  },
+  {
+    cooldown: 4,
+    pierce: true,
+    beams: [
+      { ox: 0, oy: 0, w: 12, h: 26, speed: 11, damage: 2 },
+      { ox: -14, oy: 6, w: 7, h: 18, speed: 10, damage: 1 },
+      { ox: 13, oy: 6, w: 7, h: 18, speed: 10, damage: 1 }
+    ]
+  },
+  {
+    cooldown: 3,
+    pierce: true,
+    beams: [
+      { ox: 0, oy: 0, w: 14, h: 28, speed: 12, damage: 3 },
+      { ox: -18, oy: 4, w: 8, h: 20, speed: 11, damage: 2 },
+      { ox: 18, oy: 4, w: 8, h: 20, speed: 11, damage: 2 },
+      { ox: -28, oy: 10, w: 6, h: 16, speed: 10, damage: 1 }
+    ]
+  },
+  {
+    laser: true,
+    damage: 4
+  }
+];
+const RAD_ITEM_COLORS = ["#bdf", "#9f9", "#6f6", "#fa0"];
+const THIN_LASER_PALETTES = {
+  xi: {
+    outer: "60, 255, 80",
+    core: "120, 255, 90",
+    hot: "220, 255, 210",
+    impact: "255, 255, 230",
+    impactGlow: "255, 180, 80",
+    shadow: "#3f3"
+  },
+  rad: {
+    outer: "255, 120, 40",
+    core: "255, 180, 70",
+    hot: "255, 240, 210",
+    impact: "255, 255, 220",
+    impactGlow: "255, 100, 30",
+    shadow: "#f80"
+  }
+};
 const STARTING_LOADOUT = {
   radBeam: true,
   flame: true,
@@ -69,8 +133,7 @@ const STARTING_LOADOUT = {
 
 function applyStartingLoadout() {
   if (STARTING_LOADOUT.radBeam) {
-    player.airWeapon = "radBeam";
-    player.airWeaponTimer = WEAPON_DURATION;
+    applyRadBeamItem(3);
   }
   if (STARTING_LOADOUT.flame) {
     player.groundWeapon = "flame";
@@ -99,9 +162,10 @@ function getLegendAlpha() {
 function init(resetScore) {
   player = {
     x: W / 2 - 16, y: H - 76, w: 32, h: 36, speed: 4.5, bank: 0, afterburner: 0, afterburnerFrame: 0,
-    airWeapon: "normal", groundWeapon: "normal", airWeaponTimer: 0, groundWeaponTimer: 0,
+    airWeapon: "normal", groundWeapon: "normal", airWeaponTimer: 0, airWeaponLevel: 0, groundWeaponTimer: 0,
     missileWeaponTimer: 0, missileLaunchTimer: 0, missileLevel: 0,
-    barrier: 0, barrierFlash: 0, invincibleTimer: 0
+    barrier: 0, barrierFlash: 0, invincibleTimer: 0,
+    xiMode: false, xiModeTimer: 0, xiTransformFrame: 0, microMissileTimer: 0
   };
   zappers = [];
   blasters = [];
@@ -126,6 +190,7 @@ function init(resetScore) {
   wildfire = null;
   wildfireParticles = [];
   wildfireItemDelayTimer = WILDFIRE_ITEM_DELAY_FRAMES;
+  xiItemDelayTimer = XI_ITEM_DELAY_FRAMES;
   applyStartingLoadout();
   seedInitialGround();
   resetLegendFade();
@@ -202,7 +267,10 @@ function worldToScreen(worldY) {
 
 function pickPowerUpType() {
   const roll = Math.random();
-  if (roll < 0.10) return "radBeam";
+  if (roll < 0.02) return "radBeam1";
+  if (roll < 0.04) return "radBeam2";
+  if (roll < 0.07) return "radBeam3";
+  if (roll < 0.10) return "radBeam4";
   if (roll < 0.20) return "flame";
   if (roll < 0.27) return "funnelMissile1";
   if (roll < 0.31) return "funnelMissile2";
@@ -211,8 +279,42 @@ function pickPowerUpType() {
   if (roll < 0.50) return "barrier1";
   if (roll < 0.64) return "barrier2";
   if (roll < 0.75) return "barrier8";
-  if (roll < 0.77) return "wildfire";
+  if (roll < 0.765) return "xi";
+  if (roll < 0.785) return "wildfire";
   return "invincibleStar";
+}
+
+function getFunnelSpec(level) {
+  if (level >= XI_FUNNEL_LEVEL) return XI_FUNNEL_SPEC;
+  return FUNNEL_LEVELS[level] || FUNNEL_LEVELS[1];
+}
+
+function getFunnelColor(level) {
+  return FUNNEL_ITEM_COLORS[Math.min(Math.max(level, 1), FUNNEL_ITEM_COLORS.length) - 1];
+}
+
+function getRadSpec(level) {
+  return RAD_LEVELS[level] || RAD_LEVELS[1];
+}
+
+function getRadColor(level) {
+  return RAD_ITEM_COLORS[Math.min(Math.max(level, 1), RAD_ITEM_COLORS.length) - 1];
+}
+
+function getRadBeamLevelFromItem(type) {
+  if (type === "radBeam") return 1;
+  const level = parseInt(type.replace("radBeam", ""), 10);
+  return level >= 1 && level <= 4 ? level : 1;
+}
+
+function isRadBeamItem(type) {
+  return type === "radBeam" || type.startsWith("radBeam");
+}
+
+function applyRadBeamItem(level) {
+  player.airWeapon = "radBeam";
+  player.airWeaponLevel = Math.max(player.airWeaponLevel || 0, level);
+  player.airWeaponTimer = WEAPON_DURATION;
 }
 
 function getFunnelMissileLevelFromItem(type) {
@@ -239,9 +341,10 @@ function spawnPowerUp(x, y, type) {
 }
 
 function applyBarrierItem(type) {
-  if (type === "barrier1") player.barrier = Math.min(MAX_BARRIER, player.barrier + 1);
-  else if (type === "barrier2") player.barrier = Math.min(MAX_BARRIER, player.barrier + 2);
-  else if (type === "barrier8") player.barrier = MAX_BARRIER;
+  const maxBarrier = player.xiMode ? XI_BARRIER : MAX_BARRIER;
+  if (type === "barrier1") player.barrier = Math.min(maxBarrier, player.barrier + 1);
+  else if (type === "barrier2") player.barrier = Math.min(maxBarrier, player.barrier + 2);
+  else if (type === "barrier8") player.barrier = maxBarrier;
   player.barrierFlash = 24;
 }
 
@@ -579,10 +682,10 @@ function drawWildfirePlayerGlow(x, y, w, h) {
 }
 
 function collectPowerUp(item) {
-  if (item.type === "radBeam") {
-    player.airWeapon = "radBeam";
-    player.airWeaponTimer = WEAPON_DURATION;
-    addBurst(item.x + item.w / 2, item.y + item.h / 2, 10, ["#ff0", "#0f0", "#fa0", "#fff"]);
+  if (isRadBeamItem(item.type)) {
+    const lv = getRadBeamLevelFromItem(item.type);
+    applyRadBeamItem(lv);
+    addBurst(item.x + item.w / 2, item.y + item.h / 2, 10 + lv * 2, ["#ff0", "#0f0", "#fa0", "#fff", RAD_ITEM_COLORS[lv - 1]]);
   } else if (item.type === "flame") {
     player.groundWeapon = "flame";
     player.groundWeaponTimer = WEAPON_DURATION;
@@ -598,6 +701,8 @@ function collectPowerUp(item) {
     triggerWildfire();
     burstWildfireParticles(item.x + item.w / 2, item.y + item.h / 2, 24, 28, 6);
     addBurst(item.x + item.w / 2, item.y + item.h / 2, 12, ["#fff", "#ff0", "#f80", "#fa0"]);
+  } else if (item.type === "xi") {
+    applyXiItem(item.x + item.w / 2, item.y + item.h / 2);
   } else {
     applyBarrierItem(item.type);
     addBurst(item.x + item.w / 2, item.y + item.h / 2, 12, ["#8cf", "#adf", "#fff", "#59d7ff"]);
@@ -608,20 +713,235 @@ function tryDropPowerUp(x, y) {
   if (Math.random() < POWERUP_DROP_RATE) spawnPowerUp(x, y);
 }
 
+function getAirEnemyCenter(e) {
+  return { x: e.x + e.w / 2, y: e.y + e.h / 2 };
+}
+
+function getXiLaserTargetCenter(targetType, ref) {
+  if (targetType === "air") return getAirEnemyCenter(ref);
+  const sy = worldToScreen(ref.worldY);
+  return { x: ref.x + ref.w / 2, y: sy + ref.h / 2 };
+}
+
+function findXiLaserTargets(limit) {
+  const cx = player.x + player.w / 2;
+  const cy = player.y + player.h / 2;
+  const targets = [];
+  for (const e of airEnemies) {
+    if (!e.alive) continue;
+    const center = getAirEnemyCenter(e);
+    targets.push({
+      targetType: "air",
+      ref: e,
+      x: center.x,
+      y: center.y,
+      dist: Math.hypot(center.x - cx, center.y - cy)
+    });
+  }
+  for (const g of groundTargets) {
+    if (!g.alive) continue;
+    const sy = worldToScreen(g.worldY);
+    if (sy < -g.h || sy > H + g.h) continue;
+    const center = { x: g.x + g.w / 2, y: sy + g.h / 2 };
+    targets.push({
+      targetType: "ground",
+      ref: g,
+      x: center.x,
+      y: center.y,
+      dist: Math.hypot(center.x - cx, center.y - cy)
+    });
+  }
+  targets.sort((a, b) => a.dist - b.dist);
+  return targets.slice(0, limit);
+}
+
+function damageTargetFromXiLaser(targetType, ref, hitX, hitY, damage) {
+  if (!ref.alive) return;
+  ref.hp -= damage;
+  if (ref.hp <= 0) {
+    ref.alive = false;
+    score += ref.score;
+    const colors = targetType === "ground"
+      ? ["#6f6", "#afa", "#fff", "#f80", "#ff0"]
+      : ["#6f6", "#afa", "#fff", "#0f0", "#ff0"];
+    addBurst(hitX, hitY, 10, colors);
+    tryDropPowerUp(hitX, hitY);
+  } else {
+    addBurst(hitX, hitY, 5, ["#6f6", "#afa", "#fff"]);
+  }
+}
+
+function damageAirEnemyFromRadLaser(enemy, hitX, hitY, damage) {
+  if (!enemy.alive) return;
+  enemy.hp -= damage;
+  if (enemy.hp <= 0) {
+    enemy.alive = false;
+    score += enemy.score;
+    addBurst(hitX, hitY, 10, ["#ff0", "#fa0", "#f80", "#fff", "#ffc080"]);
+    tryDropPowerUp(hitX, hitY);
+  } else {
+    addBurst(hitX, hitY, 5, ["#fa0", "#f80", "#fff"]);
+  }
+}
+
+function hasActiveXiLaser() {
+  return zappers.some(b => b.type === "xiBeam");
+}
+
+function hasActiveRadLaser() {
+  return zappers.some(b => b.type === "radLaser");
+}
+
+function getThinLaserOrigin(beamType) {
+  const yOff = beamType === "xiBeam" ? 8 : 4;
+  return { x: player.x + player.w / 2, y: player.y + yOff };
+}
+
+function findAirTargetsForRadLaser(limit) {
+  const cx = player.x + player.w / 2;
+  const cy = player.y + player.h / 2;
+  const targets = [];
+  for (const e of airEnemies) {
+    if (!e.alive) continue;
+    const center = getAirEnemyCenter(e);
+    targets.push({
+      ref: e,
+      x: center.x,
+      y: center.y,
+      dist: Math.hypot(center.x - cx, center.y - cy)
+    });
+  }
+  targets.sort((a, b) => a.dist - b.dist);
+  return targets.slice(0, limit);
+}
+
+function fireSingleXiLaser() {
+  if (!player.xiMode || hasActiveXiLaser()) return;
+  const targets = findXiLaserTargets(1);
+  if (!targets.length) return;
+
+  const origin = getThinLaserOrigin("xiBeam");
+  const target = targets[0];
+  const dist = Math.hypot(target.x - origin.x, target.y - origin.y);
+
+  zappers.push({
+    type: "xiBeam",
+    x1: origin.x,
+    y1: origin.y,
+    x2: target.x,
+    y2: target.y,
+    progress: 0,
+    travelSpeed: Math.min(0.75, 36 / Math.max(dist, 20)),
+    targetType: target.targetType,
+    targetRef: target.ref,
+    damage: 4,
+    hit: false,
+    hitFlash: 0
+  });
+}
+
+function fireSingleRadLaser() {
+  if (player.airWeapon !== "radBeam" || (player.airWeaponLevel || 1) < 4) return;
+  if (hasActiveRadLaser()) return;
+  const targets = findAirTargetsForRadLaser(1);
+  if (!targets.length) return;
+
+  const origin = getThinLaserOrigin("radLaser");
+  const target = targets[0];
+  const dist = Math.hypot(target.x - origin.x, target.y - origin.y);
+  const damage = getRadSpec(4).damage || 4;
+
+  zappers.push({
+    type: "radLaser",
+    x1: origin.x,
+    y1: origin.y,
+    x2: target.x,
+    y2: target.y,
+    progress: 0,
+    travelSpeed: Math.min(0.75, 36 / Math.max(dist, 20)),
+    targetRef: target.ref,
+    damage,
+    hit: false,
+    hitFlash: 0
+  });
+}
+
+function tryFireRadLaser() {
+  if (player.airWeapon !== "radBeam" || (player.airWeaponLevel || 1) < 4) return;
+  if (player.airWeaponTimer <= 0 || player.xiMode) return;
+  if (hasActiveRadLaser()) return;
+  fireSingleRadLaser();
+}
+
+function tryFireXiLaser() {
+  if (!player.xiMode || hasActiveXiLaser()) return;
+  fireSingleXiLaser();
+}
+
+function updateThinLaser(b) {
+  if (!b.hit) {
+    const origin = getThinLaserOrigin(b.type);
+    b.x1 = origin.x;
+    b.y1 = origin.y;
+    if (b.targetRef && b.targetRef.alive) {
+      if (b.type === "radLaser") {
+        const center = getAirEnemyCenter(b.targetRef);
+        b.x2 = center.x;
+        b.y2 = center.y;
+      } else {
+        const center = getXiLaserTargetCenter(b.targetType, b.targetRef);
+        b.x2 = center.x;
+        b.y2 = center.y;
+      }
+    }
+    b.progress += b.travelSpeed;
+    if (b.progress >= 1) {
+      b.progress = 1;
+      b.hit = true;
+      b.hitFlash = 4;
+      if (b.targetRef && b.targetRef.alive) {
+        const damage = b.damage || 4;
+        if (b.type === "radLaser") {
+          damageAirEnemyFromRadLaser(b.targetRef, b.x2, b.y2, damage);
+        } else {
+          damageTargetFromXiLaser(b.targetType, b.targetRef, b.x2, b.y2, damage);
+        }
+      }
+    }
+    return false;
+  }
+
+  b.hitFlash--;
+  return b.hitFlash <= 0;
+}
+
+function clearThinBeams() {
+  zappers = zappers.filter(b => b.type !== "xiBeam" && b.type !== "radLaser");
+}
+
 function fireZapper() {
   if (shootCooldown > 0) return;
   const cx = player.x + player.w / 2;
-  if (player.airWeapon === "radBeam") {
-    zappers.push({
-      x: cx - 6, y: player.y, w: 12, h: 26, speed: 11, type: "rad", pierce: true, damage: 2
-    });
-    zappers.push({
-      x: cx - 20, y: player.y + 6, w: 7, h: 18, speed: 10, type: "rad", pierce: true, damage: 1
-    });
-    zappers.push({
-      x: cx + 13, y: player.y + 6, w: 7, h: 18, speed: 10, type: "rad", pierce: true, damage: 1
-    });
-    shootCooldown = 4;
+  if (player.xiMode) {
+    return;
+  } else if (player.airWeapon === "radBeam") {
+    const level = player.airWeaponLevel || 1;
+    if (level >= 4) return;
+    const spec = getRadSpec(level);
+    for (const beam of spec.beams) {
+      zappers.push({
+        x: cx + beam.ox - beam.w / 2,
+        y: player.y + beam.oy,
+        w: beam.w,
+        h: beam.h,
+        speed: beam.speed,
+        type: "rad",
+        pierce: spec.pierce,
+        damage: beam.damage,
+        level
+      });
+    }
+    shootCooldown = spec.cooldown;
   } else {
     zappers.push({
       x: cx - 2,
@@ -638,16 +958,19 @@ function fireZapper() {
 }
 
 function fireBlaster() {
-  if (bombCooldown > 0) return;
+  if (bombCooldown > 0 || player.xiMode) return;
   const cx = player.x + player.w / 2;
   if (player.groundWeapon === "flame") {
-    for (let n = -1; n <= 1; n++) {
+    const spread = 3;
+    const count = 3;
+    for (let n = 0; n < count; n++) {
+      const t = count === 1 ? 0 : (n / (count - 1)) * 2 - 1;
       flames.push({
-        x: cx - 6 + n * 8,
+        x: cx - 8 + t * spread * 4,
         y: player.y + player.h - 4,
         w: 12,
         h: 16,
-        vx: n * 1.8 + (Math.random() - 0.5) * 0.8,
+        vx: t * 1.8 + (Math.random() - 0.5) * 0.8,
         vy: 7 + Math.random() * 2,
         life: 28,
         damage: 2,
@@ -671,12 +994,64 @@ function fireBlaster() {
 
 function resetPlayerWeapons() {
   player.airWeapon = "normal";
+  player.airWeaponLevel = 0;
   player.groundWeapon = "normal";
   player.airWeaponTimer = 0;
   player.groundWeaponTimer = 0;
   player.missileWeaponTimer = 0;
   player.missileLaunchTimer = 0;
   player.missileLevel = 0;
+  player.xiMode = false;
+  player.xiModeTimer = 0;
+  player.xiTransformFrame = 0;
+  player.microMissileTimer = 0;
+  player.w = FIGHTER_SIZE.w;
+  player.h = FIGHTER_SIZE.h;
+  clearThinBeams();
+}
+
+function applyXiItem(burstX, burstY) {
+  const cx = player.x + player.w / 2;
+  const cy = player.y + player.h / 2;
+  player.xiMode = true;
+  player.xiModeTimer = XI_DURATION;
+  player.xiTransformFrame = 0;
+  player.microMissileTimer = 0;
+  player.w = XI_SIZE.w;
+  player.h = XI_SIZE.h;
+  player.x = Math.max(8, Math.min(W - player.w - 8, cx - player.w / 2));
+  player.y = Math.max(H * 0.35, Math.min(H - player.h - 8, cy - player.h / 2));
+  player.barrier = XI_BARRIER;
+  player.barrierFlash = 36;
+  missiles = [];
+  flames = [];
+  blasters = [];
+  tryFireXiLaser();
+  addBurst(burstX, burstY, 28, ["#fff", "#e8eaef", "#59d7ff", "#ffd040", "#40ff80"]);
+}
+
+function exitXiMode() {
+  clearThinBeams();
+  const cx = player.x + player.w / 2;
+  const cy = player.y + player.h / 2;
+  player.xiMode = false;
+  player.xiModeTimer = 0;
+  player.xiTransformFrame = 0;
+  player.microMissileTimer = 0;
+  player.w = FIGHTER_SIZE.w;
+  player.h = FIGHTER_SIZE.h;
+  player.x = Math.max(8, Math.min(W - player.w - 8, cx - player.w / 2));
+  player.y = Math.max(H * 0.35, Math.min(H - player.h - 8, cy - player.h / 2));
+  player.missileLevel = 0;
+  player.missileWeaponTimer = 0;
+  player.missileLaunchTimer = 0;
+  player.airWeapon = "normal";
+  player.airWeaponLevel = 0;
+  player.airWeaponTimer = 0;
+  player.groundWeapon = "normal";
+  player.groundWeaponTimer = 0;
+  player.barrier = Math.min(MAX_BARRIER, player.barrier);
+  addBurst(cx, cy, 14, ["#8cf", "#adf", "#e8eaef", "#fff"]);
 }
 
 function applyFunnelMissileItem(level) {
@@ -724,7 +1099,7 @@ function getHomingTargetPos(m) {
 }
 
 function launchFunnelMissile(launchX, launchY, level) {
-  const spec = FUNNEL_LEVELS[level];
+  const spec = getFunnelSpec(level);
   const target = findHomingTarget(launchX, launchY);
   missiles.push({
     x: launchX - 4,
@@ -739,18 +1114,53 @@ function launchFunnelMissile(launchX, launchY, level) {
     targetRef: target ? target.ref : null,
     damage: spec.damage,
     level,
+    kind: "funnel",
     life: 220
   });
 }
 
 function launchFunnelMissiles() {
   const level = player.missileLevel || 1;
-  const spec = FUNNEL_LEVELS[level];
-  const cy = player.y + 8;
+  const spec = getFunnelSpec(level);
+  const cy = player.y + (player.xiMode ? 10 : 8);
   for (let i = 0; i < spec.count; i++) {
     const t = spec.count === 1 ? 0.5 : i / (spec.count - 1);
     const launchX = player.x + 4 + t * (player.w - 8);
     launchFunnelMissile(launchX, cy, level);
+  }
+}
+
+function launchMicroMissiles() {
+  if (!player.xiMode) return;
+  const launchPoints = [
+    { x: player.x - 2, y: player.y + player.h * 0.28 },
+    { x: player.x + player.w + 2, y: player.y + player.h * 0.28 },
+    { x: player.x + player.w * 0.18, y: player.y + player.h - 10 },
+    { x: player.x + player.w * 0.82, y: player.y + player.h - 10 },
+    { x: player.x + player.w * 0.5, y: player.y + player.h * 0.12 }
+  ];
+  for (const pt of launchPoints) {
+    for (let i = 0; i < 4; i++) {
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.1;
+      const speed = 9 + Math.random() * 5;
+      const target = findHomingTarget(pt.x, pt.y);
+      missiles.push({
+        x: pt.x - 2,
+        y: pt.y,
+        w: 4,
+        h: 6,
+        vx: Math.cos(angle) * speed * 0.35,
+        vy: Math.sin(angle) * speed,
+        speed: speed + 5,
+        turnRate: 0.3,
+        targetType: target ? target.type : null,
+        targetRef: target ? target.ref : null,
+        damage: 1,
+        level: 0,
+        kind: "micro",
+        life: 150
+      });
+    }
   }
 }
 
@@ -843,8 +1253,10 @@ function updateExplosion() {
       if (lives <= 0) {
         gameOver = true;
       } else {
-        player.x = W / 2 - player.w / 2;
+        player.x = W / 2 - FIGHTER_SIZE.w / 2;
         player.y = H - 70;
+        player.w = FIGHTER_SIZE.w;
+        player.h = FIGHTER_SIZE.h;
         player.bank = 0;
         player.afterburner = 0;
         player.afterburnerFrame = 0;
@@ -897,6 +1309,12 @@ function update() {
       spawnPowerUp(player.x + player.w / 2, player.y - 52, "wildfire");
     }
   }
+  if (xiItemDelayTimer > 0) {
+    xiItemDelayTimer--;
+    if (xiItemDelayTimer === 0) {
+      spawnPowerUp(player.x + player.w / 2, player.y - 72, "xi");
+    }
+  }
 
   scrollY += SCROLL_SPEED + wave * 0.05;
 
@@ -909,32 +1327,47 @@ function update() {
 
   if (shootCooldown > 0) shootCooldown--;
   if (bombCooldown > 0) bombCooldown--;
-  if (player.airWeaponTimer > 0) {
-    player.airWeaponTimer--;
-    if (player.airWeaponTimer <= 0) player.airWeapon = "normal";
-  }
-  if (player.groundWeaponTimer > 0) {
-    player.groundWeaponTimer--;
-    if (player.groundWeaponTimer <= 0) player.groundWeapon = "normal";
-  }
-  if (player.missileWeaponTimer > 0) {
-    player.missileWeaponTimer--;
-    player.missileLaunchTimer++;
-    const funnelSpec = FUNNEL_LEVELS[player.missileLevel] || FUNNEL_LEVELS[1];
-    if (player.missileLaunchTimer >= funnelSpec.interval) {
-      player.missileLaunchTimer = 0;
-      launchFunnelMissiles();
+  if (player.xiMode) {
+    player.xiModeTimer--;
+    player.xiTransformFrame++;
+    if (player.xiModeTimer <= 0) {
+      exitXiMode();
+    } else {
+      tryFireXiLaser();
     }
   } else {
-    player.missileLevel = 0;
+    if (player.airWeaponTimer > 0) {
+      player.airWeaponTimer--;
+      if (player.airWeaponTimer <= 0) {
+        player.airWeapon = "normal";
+        player.airWeaponLevel = 0;
+      }
+    }
+    if (player.groundWeaponTimer > 0) {
+      player.groundWeaponTimer--;
+      if (player.groundWeaponTimer <= 0) player.groundWeapon = "normal";
+    }
+    if (player.missileWeaponTimer > 0) {
+      player.missileWeaponTimer--;
+      player.missileLaunchTimer++;
+      const funnelSpec = getFunnelSpec(player.missileLevel);
+      if (player.missileLaunchTimer >= funnelSpec.interval) {
+        player.missileLaunchTimer = 0;
+        launchFunnelMissiles();
+      }
+    } else {
+      player.missileLevel = 0;
+    }
+    if (player.airWeapon === "radBeam" && (player.airWeaponLevel || 1) >= 4 && player.airWeaponTimer > 0) {
+      tryFireRadLaser();
+    } else if (keys.Space) {
+      fireZapper();
+    }
+    if (keys.KeyX) fireBlaster();
   }
   if (player.barrierFlash > 0) player.barrierFlash--;
-  if (player.invincibleTimer > 0) {
-    player.invincibleTimer--;
-  }
+  if (player.invincibleTimer > 0) player.invincibleTimer--;
   updateWildfire();
-  if (keys.Space) fireZapper();
-  if (keys.KeyX) fireBlaster();
 
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
@@ -970,6 +1403,16 @@ function update() {
 
   for (let i = zappers.length - 1; i >= 0; i--) {
     const b = zappers[i];
+    if (b.type === "xiBeam" || b.type === "radLaser") {
+      if (updateThinLaser(b)) {
+        zappers.splice(i, 1);
+        if (b.type === "xiBeam" && player.xiMode) fireSingleXiLaser();
+        else if (b.type === "radLaser" && player.airWeapon === "radBeam" && (player.airWeaponLevel || 1) >= 4) {
+          fireSingleRadLaser();
+        }
+      }
+      continue;
+    }
     b.y -= b.speed;
     if (b.y + b.h < 0) { zappers.splice(i, 1); continue; }
 
@@ -1603,6 +2046,222 @@ function drawPlayer(x, y, w, h, bank = 0, afterburner = 0, afterburnerFrame = 0)
   ctx.restore();
 }
 
+function drawXiThruster(sx, sy, frame) {
+  const flicker = 0.82 + Math.sin(frame * 0.45) * 0.12;
+  const len = (18 + Math.sin(frame * 0.7) * 5) * sy * flicker;
+  const halfW = 4.5 * sx;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const grad = ctx.createRadialGradient(0, 14 * sy, 0, 0, 14 * sy + len * 0.5, len);
+  grad.addColorStop(0, "rgba(220, 245, 255, 0.95)");
+  grad.addColorStop(0.25, "rgba(120, 210, 255, 0.75)");
+  grad.addColorStop(0.55, "rgba(60, 140, 255, 0.45)");
+  grad.addColorStop(1, "rgba(30, 80, 255, 0)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(-halfW, 14 * sy);
+  ctx.quadraticCurveTo(-halfW * 1.8, 14 * sy + len * 0.45, 0, 14 * sy + len);
+  ctx.quadraticCurveTo(halfW * 1.8, 14 * sy + len * 0.45, halfW, 14 * sy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawXiGundam(x, y, w, h, bank, frame) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const sx = w / 48;
+  const sy = h / 52;
+  const transformGlow = player.xiTransformFrame < 24
+    ? 1 + (24 - player.xiTransformFrame) / 24 * 0.35
+    : 1;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.32)";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + h * 0.38, w * 0.55, h * 0.1, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.translate(cx, cy);
+  ctx.rotate(bank * 0.5);
+  ctx.scale(transformGlow, transformGlow);
+
+  drawXiThruster(sx, sy, frame);
+
+  ctx.fillStyle = "#1a2848";
+  ctx.beginPath();
+  ctx.moveTo(-5 * sx, 8 * sy);
+  ctx.lineTo(-8 * sx, 22 * sy);
+  ctx.lineTo(-3 * sx, 24 * sy);
+  ctx.lineTo(3 * sx, 24 * sy);
+  ctx.lineTo(8 * sx, 22 * sy);
+  ctx.lineTo(5 * sx, 8 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#243058";
+  ctx.fillRect(-4 * sx, 18 * sy, 3.5 * sx, 8 * sy);
+  ctx.fillRect(0.5 * sx, 18 * sy, 3.5 * sx, 8 * sy);
+
+  ctx.fillStyle = "#d8dce8";
+  ctx.beginPath();
+  ctx.moveTo(-7 * sx, -2 * sy);
+  ctx.lineTo(-5 * sx, 10 * sy);
+  ctx.lineTo(5 * sx, 10 * sy);
+  ctx.lineTo(7 * sx, -2 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#ffd040";
+  ctx.beginPath();
+  ctx.moveTo(-5 * sx, 0 * sy);
+  ctx.lineTo(0, -3 * sy);
+  ctx.lineTo(5 * sx, 0 * sy);
+  ctx.lineTo(0, 3 * sy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#c03030";
+  ctx.fillRect(-1.5 * sx, 2 * sy, 3 * sx, 2.5 * sy);
+
+  ctx.fillStyle = "#e8eaef";
+  ctx.beginPath();
+  ctx.moveTo(-22 * sx, -6 * sy);
+  ctx.lineTo(-14 * sx, -18 * sy);
+  ctx.lineTo(-8 * sx, -14 * sy);
+  ctx.lineTo(-6 * sx, -4 * sy);
+  ctx.lineTo(-10 * sx, 6 * sy);
+  ctx.lineTo(-18 * sx, 4 * sy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(22 * sx, -6 * sy);
+  ctx.lineTo(14 * sx, -18 * sy);
+  ctx.lineTo(8 * sx, -14 * sy);
+  ctx.lineTo(6 * sx, -4 * sy);
+  ctx.lineTo(10 * sx, 6 * sy);
+  ctx.lineTo(18 * sx, 4 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#cfd4de";
+  ctx.beginPath();
+  ctx.moveTo(-10 * sx, -2 * sy);
+  ctx.lineTo(-8 * sx, 8 * sy);
+  ctx.lineTo(-4 * sx, 10 * sy);
+  ctx.lineTo(-4 * sx, -2 * sy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(10 * sx, -2 * sy);
+  ctx.lineTo(8 * sx, 8 * sy);
+  ctx.lineTo(4 * sx, 10 * sy);
+  ctx.lineTo(4 * sx, -2 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#f0f2f6";
+  ctx.beginPath();
+  ctx.moveTo(-6 * sx, -10 * sy);
+  ctx.lineTo(6 * sx, -10 * sy);
+  ctx.lineTo(7 * sx, -4 * sy);
+  ctx.lineTo(-7 * sx, -4 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#ffd040";
+  ctx.beginPath();
+  ctx.moveTo(0, -22 * sy);
+  ctx.lineTo(3 * sx, -14 * sy);
+  ctx.lineTo(0, -11 * sy);
+  ctx.lineTo(-3 * sx, -14 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = "#c03030";
+  ctx.fillRect(-2 * sx, -8 * sy, 4 * sx, 2 * sy);
+
+  ctx.fillStyle = "#40ff80";
+  ctx.fillRect(-3.5 * sx, -6.5 * sy, 2.5 * sx, 1.5 * sy);
+  ctx.fillRect(1 * sx, -6.5 * sy, 2.5 * sx, 1.5 * sy);
+
+  ctx.fillStyle = "#e0e4ec";
+  ctx.beginPath();
+  ctx.moveTo(-12 * sx, 2 * sy);
+  ctx.lineTo(-18 * sx, 14 * sy);
+  ctx.lineTo(-8 * sx, 12 * sy);
+  ctx.lineTo(-6 * sx, 4 * sy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(12 * sx, 2 * sy);
+  ctx.lineTo(18 * sx, 14 * sy);
+  ctx.lineTo(8 * sx, 12 * sy);
+  ctx.lineTo(6 * sx, 4 * sy);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(200, 210, 230, 0.55)";
+  ctx.lineWidth = Math.max(0.8, sx);
+  ctx.beginPath();
+  ctx.moveTo(-22 * sx, -8 * sy);
+  ctx.lineTo(-14 * sx, -16 * sy);
+  ctx.moveTo(22 * sx, -8 * sy);
+  ctx.lineTo(14 * sx, -16 * sy);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawXiBarrier(x, y, w, h, layers, flash) {
+  if (layers <= 0) return;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const pulse = 0.85 + Math.sin(performance.now() * 0.01) * 0.15;
+  const flashBoost = flash > 0 ? flash / 20 : 0;
+  const radius = Math.max(w, h) * 0.62 + layers * 1.8;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.globalCompositeOperation = "lighter";
+
+  for (let ring = 0; ring < 3; ring++) {
+    const rr = radius + ring * 6;
+    const alpha = (0.22 - ring * 0.05) * pulse + flashBoost * 0.2;
+    ctx.strokeStyle = `rgba(140, 220, 255, ${alpha})`;
+    ctx.lineWidth = 2.2 - ring * 0.4;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rr * 1.08, rr * 0.92, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  const hexCount = 12;
+  for (let i = 0; i < hexCount; i++) {
+    const ang = i * Math.PI * 2 / hexCount + performance.now() * 0.001;
+    const hx = Math.cos(ang) * radius * 0.92;
+    const hy = Math.sin(ang) * radius * 0.78;
+    const alpha = 0.12 * pulse + flashBoost * 0.15;
+    ctx.strokeStyle = `rgba(190, 240, 255, ${alpha})`;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let v = 0; v < 6; v++) {
+      const va = ang + v * Math.PI / 3;
+      const px = hx + Math.cos(va) * 5;
+      const py = hy + Math.sin(va) * 4;
+      if (v === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = `rgba(120, 210, 255, ${0.06 + flashBoost * 0.1})`;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, radius * 1.05, radius * 0.88, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawAirEnemy(e) {
   const cx = e.x + e.w / 2;
   const cy = e.y + e.h / 2;
@@ -1919,6 +2578,71 @@ function drawInvincibleAura(x, y, w, h, timer) {
   ctx.restore();
 }
 
+function drawRadBeamItemIcon(level, pulse, timer) {
+  const color = RAD_ITEM_COLORS[level - 1];
+
+  if (level >= 4) {
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 16);
+    glow.addColorStop(0, `rgba(255, 220, 140, ${0.95 * pulse})`);
+    glow.addColorStop(0.45, `rgba(255, 140, 40, ${0.55 * pulse})`);
+    glow.addColorStop(1, "rgba(180, 60, 0, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, 16, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 5);
+    ctx.lineTo(0, -11);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255, 240, 210, ${0.95 * pulse})`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 5);
+    ctx.lineTo(0, -11);
+    ctx.stroke();
+    ctx.fillStyle = "#fff4d0";
+    ctx.beginPath();
+    ctx.arc(0, 4, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.font = "8px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("R" + level, 0, 16);
+    return;
+  }
+
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 16);
+  glow.addColorStop(0, `rgba(180, 255, 180, ${0.95 * pulse})`);
+  glow.addColorStop(0.45, `rgba(80, 255, 80, ${0.55 * pulse})`);
+  glow.addColorStop(1, "rgba(40, 180, 40, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, 16, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < level; i++) {
+    const ang = -Math.PI / 2 + (i - (level - 1) / 2) * 0.45 + Math.sin(timer * 0.08) * 0.12;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(ang) * 3, Math.sin(ang) * 3);
+    ctx.lineTo(Math.cos(ang) * (10 + level), Math.sin(ang) * (10 + level));
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = level >= 4 ? "#efe" : "#cfc";
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.font = "8px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("R" + level, 0, 16);
+}
+
 function drawFunnelMissileItemIcon(level, pulse, timer) {
   const color = FUNNEL_ITEM_COLORS[level - 1];
   const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 16);
@@ -1968,34 +2692,8 @@ function drawPowerUp(item) {
   ctx.save();
   ctx.translate(cx, cy);
 
-  if (item.type === "radBeam") {
-    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 16);
-    glow.addColorStop(0, `rgba(180, 255, 120, ${0.95 * pulse})`);
-    glow.addColorStop(0.45, `rgba(80, 255, 80, ${0.55 * pulse})`);
-    glow.addColorStop(1, "rgba(40, 180, 40, 0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(0, 0, 16, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = "#8f8";
-    ctx.lineWidth = 2;
-    for (let a = 0; a < 6; a++) {
-      const ang = a * Math.PI / 3 + item.timer * 0.05;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(ang) * 5, Math.sin(ang) * 5);
-      ctx.lineTo(Math.cos(ang) * 13, Math.sin(ang) * 13);
-      ctx.stroke();
-    }
-
-    ctx.fillStyle = "#efe";
-    ctx.beginPath();
-    ctx.arc(0, 0, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#4c4";
-    ctx.font = "8px monospace";
-    ctx.textAlign = "center";
-    ctx.fillText("RAD", 0, 3);
+  if (isRadBeamItem(item.type)) {
+    drawRadBeamItemIcon(getRadBeamLevelFromItem(item.type), pulse, item.timer);
   } else if (item.type === "flame") {
     const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 16);
     glow.addColorStop(0, `rgba(255, 240, 180, ${0.95 * pulse})`);
@@ -2062,6 +2760,54 @@ function drawPowerUp(item) {
     ctx.font = "8px monospace";
     ctx.textAlign = "center";
     ctx.fillText("WFR", 0, 15);
+  } else if (item.type === "xi") {
+    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 18);
+    glow.addColorStop(0, `rgba(255, 255, 255, ${0.95 * pulse})`);
+    glow.addColorStop(0.35, `rgba(180, 220, 255, ${0.65 * pulse})`);
+    glow.addColorStop(0.7, `rgba(255, 208, 64, ${0.35 * pulse})`);
+    glow.addColorStop(1, "rgba(89, 215, 255, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#e8eaef";
+    ctx.beginPath();
+    ctx.moveTo(0, -9);
+    ctx.lineTo(-8, 2);
+    ctx.lineTo(-4, 6);
+    ctx.lineTo(0, 3);
+    ctx.lineTo(4, 6);
+    ctx.lineTo(8, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#ffd040";
+    ctx.beginPath();
+    ctx.moveTo(0, -9);
+    ctx.lineTo(2, -4);
+    ctx.lineTo(0, -2);
+    ctx.lineTo(-2, -4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#1a2848";
+    ctx.fillRect(-2, 4, 4, 3);
+    ctx.fillStyle = "#40ff80";
+    ctx.fillRect(-2.5, -3, 2, 1.2);
+    ctx.fillRect(0.5, -3, 2, 1.2);
+
+    ctx.strokeStyle = `rgba(89, 215, 255, ${0.75 * pulse})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-10, -1);
+    ctx.lineTo(-14, -6);
+    ctx.moveTo(10, -1);
+    ctx.lineTo(14, -6);
+    ctx.stroke();
+
+    ctx.fillStyle = "#fff";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("Ξ", 0, 15);
   } else {
     const isMax = item.type === "barrier8";
     const layers = item.type === "barrier1" ? 1 : item.type === "barrier2" ? 2 : 8;
@@ -2106,35 +2852,54 @@ function drawMissiles() {
     const cy = m.y + m.h / 2;
     const angle = Math.atan2(m.vy, m.vx) + Math.PI / 2;
     const speed = Math.hypot(m.vx, m.vy);
+    const isMicro = m.kind === "micro";
     const level = m.level || 1;
-    const bodyColor = FUNNEL_ITEM_COLORS[level - 1];
+    const bodyColor = isMicro ? "#fff" : getFunnelColor(level);
 
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(angle);
 
-    for (let i = 1; i <= 3 + level; i++) {
-      ctx.globalAlpha = Math.max(0, 0.38 - i * 0.06);
-      ctx.fillStyle = i < 3 ? "rgba(255, 140, 80, 0.65)" : "rgba(180, 180, 180, 0.45)";
+    if (isMicro) {
+      for (let i = 1; i <= 2; i++) {
+        ctx.globalAlpha = Math.max(0, 0.35 - i * 0.1);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+        ctx.beginPath();
+        ctx.ellipse(0, i * (2.5 + speed * 0.25), 1.5 + i * 0.3, 1.2 + i * 0.15, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#fff";
       ctx.beginPath();
-      ctx.ellipse(0, i * (3.5 + speed * 0.35), 2.5 + level * 0.3 + i * 0.35, 2 + i * 0.2, 0, 0, Math.PI * 2);
+      ctx.moveTo(0, -4);
+      ctx.lineTo(1.5, 3);
+      ctx.lineTo(0, 1.5);
+      ctx.lineTo(-1.5, 3);
+      ctx.closePath();
       ctx.fill();
+    } else {
+      for (let i = 1; i <= 3 + level; i++) {
+        ctx.globalAlpha = Math.max(0, 0.38 - i * 0.06);
+        ctx.fillStyle = i < 3 ? "rgba(255, 140, 80, 0.65)" : "rgba(180, 180, 180, 0.45)";
+        ctx.beginPath();
+        ctx.ellipse(0, i * (3.5 + speed * 0.35), 2.5 + level * 0.3 + i * 0.35, 2 + i * 0.2, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowColor = bodyColor;
+      ctx.shadowBlur = 6 + level * 2;
+      ctx.fillStyle = bodyColor;
+      ctx.beginPath();
+      ctx.moveTo(0, -7 - level * 0.5);
+      ctx.lineTo(3 + level * 0.3, 6);
+      ctx.lineTo(0, 3.5);
+      ctx.lineTo(-3 - level * 0.3, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(-1.2, -5, 2.4, 4 + level * 0.4);
     }
-    ctx.globalAlpha = 1;
-
-    ctx.shadowColor = bodyColor;
-    ctx.shadowBlur = 6 + level * 2;
-    ctx.fillStyle = bodyColor;
-    ctx.beginPath();
-    ctx.moveTo(0, -7 - level * 0.5);
-    ctx.lineTo(3 + level * 0.3, 6);
-    ctx.lineTo(0, 3.5);
-    ctx.lineTo(-3 - level * 0.3, 6);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(-1.2, -5, 2.4, 4 + level * 0.4);
     ctx.restore();
   }
 }
@@ -2160,18 +2925,71 @@ function drawFlames() {
   ctx.restore();
 }
 
+function drawThinLaserBeam(b, paletteKey) {
+  const palette = THIN_LASER_PALETTES[paletteKey];
+  const endX = b.x1 + (b.x2 - b.x1) * b.progress;
+  const endY = b.y1 + (b.y2 - b.y1) * b.progress;
+  const alpha = b.hit ? Math.max(0, b.hitFlash / 4) : 1;
+  const impactAlpha = b.hit ? Math.max(0, b.hitFlash / 4) : 0;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  ctx.strokeStyle = `rgba(${palette.outer}, ${0.18 * alpha})`;
+  ctx.lineWidth = 2.5;
+  ctx.shadowColor = palette.shadow;
+  ctx.shadowBlur = 4;
+  ctx.beginPath();
+  ctx.moveTo(b.x1, b.y1);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = `rgba(${palette.core}, ${0.92 * alpha})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(b.x1, b.y1);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  ctx.strokeStyle = `rgba(${palette.hot}, ${0.98 * alpha})`;
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(b.x1, b.y1);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  if (impactAlpha > 0) {
+    ctx.fillStyle = `rgba(${palette.impact}, ${0.85 * impactAlpha})`;
+    ctx.beginPath();
+    ctx.arc(b.x2, b.y2, 1.5 + (1 - impactAlpha) * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(${palette.impactGlow}, ${0.45 * impactAlpha})`;
+    ctx.beginPath();
+    ctx.arc(b.x2, b.y2, 4 + (1 - impactAlpha) * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawZappers() {
   for (const b of zappers) {
-    if (b.type === "rad") {
+    if (b.type === "xiBeam") {
+      drawThinLaserBeam(b, "xi");
+    } else if (b.type === "radLaser") {
+      drawThinLaserBeam(b, "rad");
+    } else if (b.type === "rad") {
+      const lv = b.level || 1;
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.shadowColor = "#7f0";
-      ctx.shadowBlur = 14;
-      ctx.fillStyle = "rgba(80, 255, 80, 0.55)";
-      ctx.fillRect(b.x - 2, b.y, b.w + 4, b.h);
-      ctx.fillStyle = "#cfc";
+      ctx.shadowColor = getRadColor(lv);
+      ctx.shadowBlur = 10 + lv * 3;
+      ctx.fillStyle = `rgba(80, 255, 80, ${0.45 + lv * 0.04})`;
+      ctx.fillRect(b.x - 1, b.y, b.w + 2, b.h);
+      ctx.fillStyle = lv >= 3 ? "#efe" : "#cfc";
       ctx.fillRect(b.x + b.w * 0.2, b.y, b.w * 0.6, b.h);
-      ctx.fillStyle = "#efe";
+      ctx.fillStyle = "#fff";
       ctx.fillRect(b.x + b.w * 0.35, b.y + 2, b.w * 0.3, b.h - 4);
       ctx.shadowBlur = 0;
       ctx.restore();
@@ -2218,16 +3036,25 @@ function drawPlayerBarrier(x, y, w, h, layers, flash) {
 
 function drawWeaponStatus() {
   const entries = [];
-  if (player.airWeaponTimer > 0) {
-    entries.push({ label: "RAD BEAM", color: "#8f8", timer: player.airWeaponTimer, max: WEAPON_DURATION });
+  if (player.xiMode) {
+    entries.push({ label: "Ξ LASER", color: "#78ff5a", timer: player.xiModeTimer, max: XI_DURATION });
   }
-  if (player.groundWeaponTimer > 0) {
+  if (!player.xiMode && player.airWeaponTimer > 0) {
+    const radLv = player.airWeaponLevel || 1;
+    entries.push({
+      label: radLv >= 4 ? "RAD LASER" : "RAD Lv" + radLv,
+      color: getRadColor(radLv),
+      timer: player.airWeaponTimer,
+      max: WEAPON_DURATION
+    });
+  }
+  if (!player.xiMode && player.groundWeaponTimer > 0) {
     entries.push({ label: "FLAME", color: "#fa0", timer: player.groundWeaponTimer, max: WEAPON_DURATION });
   }
-  if (player.missileWeaponTimer > 0) {
+  if (!player.xiMode && player.missileWeaponTimer > 0) {
     entries.push({
       label: "FUNNEL Lv" + player.missileLevel,
-      color: FUNNEL_ITEM_COLORS[(player.missileLevel || 1) - 1],
+      color: getFunnelColor(player.missileLevel || 1),
       timer: player.missileWeaponTimer,
       max: WEAPON_DURATION
     });
@@ -2239,7 +3066,12 @@ function drawWeaponStatus() {
     entries.push({ label: "WILDFIRE", color: "#f80", timer: wildfire.timer, max: WILDFIRE_DURATION });
   }
   if (player.barrier > 0) {
-    entries.push({ label: "BARRIER", color: "#59d7ff", segments: player.barrier, max: MAX_BARRIER });
+    entries.push({
+      label: player.xiMode ? "Ξ BARRIER" : "BARRIER",
+      color: player.xiMode ? "#8cf" : "#59d7ff",
+      segments: player.barrier,
+      max: player.xiMode ? XI_BARRIER : MAX_BARRIER
+    });
   }
   if (!entries.length) return;
 
@@ -2260,8 +3092,8 @@ function drawWeaponStatus() {
       roundRect(72, y + 6, 48 * ratio, 6, 2);
       ctx.fill();
     } else {
-      const segW = 5;
-      const gap = 2;
+      const segW = entry.max > 10 ? 3 : 5;
+      const gap = entry.max > 10 ? 1 : 2;
       const totalW = entry.max * segW + (entry.max - 1) * gap;
       let sx = 118 - totalW;
       for (let i = 0; i < entry.max; i++) {
@@ -2298,20 +3130,16 @@ function drawLayerLegend() {
   ctx.fillStyle = "#ffe570";
   ctx.fillText("GROUND: X", 130, H - 38);
 
-  ctx.fillStyle = "#8f8";
-  ctx.fillRect(14, H - 24, 6, 6);
-  ctx.fillStyle = "#ccc";
-  ctx.font = "9px monospace";
-  ctx.fillText("RAD", 24, H - 18);
   ctx.fillStyle = "#f80";
   ctx.beginPath();
-  ctx.moveTo(58, H - 24);
-  ctx.lineTo(64, H - 18);
-  ctx.lineTo(52, H - 18);
+  ctx.moveTo(14, H - 24);
+  ctx.lineTo(20, H - 18);
+  ctx.lineTo(8, H - 18);
   ctx.closePath();
   ctx.fill();
   ctx.fillStyle = "#ccc";
-  ctx.fillText("FLM", 68, H - 18);
+  ctx.font = "9px monospace";
+  ctx.fillText("FLM", 24, H - 18);
 
   ctx.strokeStyle = "#59d7ff";
   ctx.lineWidth = 1.5;
@@ -2361,7 +3189,26 @@ function drawLayerLegend() {
   ctx.fillText("WFR", 264, H - 18);
 
   for (let lv = 1; lv <= 4; lv++) {
-    const lx = 118 + (lv - 1) * 34;
+    const rx = 14 + (lv - 1) * 28;
+    ctx.save();
+    ctx.translate(rx + 8, H - 12);
+    ctx.strokeStyle = RAD_ITEM_COLORS[lv - 1];
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < lv; i++) {
+      const ang = -Math.PI / 2 + (i - (lv - 1) / 2) * 0.45;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ang) * 2, Math.sin(ang) * 2);
+      ctx.lineTo(Math.cos(ang) * 7, Math.sin(ang) * 7);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = "#aaa";
+    ctx.font = "8px monospace";
+    ctx.fillText("R" + lv, rx + 4, H - 6);
+  }
+
+  for (let lv = 1; lv <= 4; lv++) {
+    const lx = 138 + (lv - 1) * 34;
     ctx.save();
     ctx.translate(lx + 8, H - 12);
     ctx.fillStyle = FUNNEL_ITEM_COLORS[lv - 1];
@@ -2380,7 +3227,7 @@ function drawLayerLegend() {
 
   ctx.fillStyle = "#888";
   ctx.font = "8px monospace";
-  ctx.fillText("F1〜F4=誘導弾Lv | WFR=山火事", 14, H - 6);
+  ctx.fillText("R1〜R4=RAD Lv | F1〜F4=誘導弾Lv | WFR=山火事 | Ξ=変形", 14, H - 6);
   ctx.restore();
 }
 
@@ -2434,10 +3281,18 @@ function draw() {
         ctx.shadowColor = `rgba(255, ${120 + backlit * 80}, 20, ${0.55 * backlit})`;
         ctx.shadowBlur = 14 + backlit * 10;
       }
-      drawPlayer(player.x, player.y, player.w, player.h, player.bank, player.afterburner, player.afterburnerFrame);
+      if (player.xiMode) {
+        drawXiGundam(player.x, player.y, player.w, player.h, player.bank, player.afterburnerFrame);
+      } else {
+        drawPlayer(player.x, player.y, player.w, player.h, player.bank, player.afterburner, player.afterburnerFrame);
+      }
       ctx.restore();
     }
-    drawPlayerBarrier(player.x, player.y, player.w, player.h, player.barrier, player.barrierFlash);
+    if (player.xiMode) {
+      drawXiBarrier(player.x, player.y, player.w, player.h, player.barrier, player.barrierFlash);
+    } else {
+      drawPlayerBarrier(player.x, player.y, player.w, player.h, player.barrier, player.barrierFlash);
+    }
   }
 
   drawWildfireFront();
