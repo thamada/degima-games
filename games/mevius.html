@@ -2096,126 +2096,95 @@ function drawXiGundam(x, y, w, h, bank, frame) {
 
   drawXiThruster(sx, sy, frame);
 
-  ctx.fillStyle = "#1a2848";
-  ctx.beginPath();
-  ctx.moveTo(-5 * sx, 8 * sy);
-  ctx.lineTo(-8 * sx, 22 * sy);
-  ctx.lineTo(-3 * sx, 24 * sy);
-  ctx.lineTo(3 * sx, 24 * sy);
-  ctx.lineTo(8 * sx, 22 * sy);
-  ctx.lineTo(5 * sx, 8 * sy);
-  ctx.closePath();
-  ctx.fill();
+  const armorStroke = "rgba(35, 45, 58, 0.92)";
+  const panelStroke = "rgba(250, 255, 255, 0.52)";
+  const shadow = "#5e6870";
+  const mid = "#aeb8bd";
+  const light = "#edf2f3";
+  const dark = "#17233d";
+  const red = "#8e2726";
+  const gold = "#e1b640";
+  const sensor = "#42f3d3";
+  const poly = (pts, fill, stroke = armorStroke, line = 1.1) => {
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    pts.forEach(([px, py], i) => {
+      const xx = px * sx;
+      const yy = py * sy;
+      if (i === 0) ctx.moveTo(xx, yy);
+      else ctx.lineTo(xx, yy);
+    });
+    ctx.closePath();
+    ctx.fill();
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = Math.max(0.65, line * sx);
+      ctx.stroke();
+    }
+  };
+  const mirror = pts => pts.map(([px, py]) => [-px, py]);
+  const both = (pts, fill, stroke, line) => {
+    poly(pts, fill, stroke, line);
+    poly(mirror(pts), fill, stroke, line);
+  };
 
-  ctx.fillStyle = "#243058";
-  ctx.fillRect(-4 * sx, 18 * sy, 3.5 * sx, 8 * sy);
-  ctx.fillRect(0.5 * sx, 18 * sy, 3.5 * sx, 8 * sy);
+  ctx.shadowColor = "rgba(130, 210, 255, 0.35)";
+  ctx.shadowBlur = 8 * transformGlow;
 
-  ctx.fillStyle = "#d8dce8";
-  ctx.beginPath();
-  ctx.moveTo(-7 * sx, -2 * sy);
-  ctx.lineTo(-5 * sx, 10 * sy);
-  ctx.lineTo(5 * sx, 10 * sy);
-  ctx.lineTo(7 * sx, -2 * sy);
-  ctx.closePath();
-  ctx.fill();
+  both([[6, -17], [13, -24], [18, -15], [15, -4], [8, -2], [5, -10]], dark);
+  both([[12, -7], [25, -18], [22, 3], [15, 13], [9, 6]], "#dce2e4");
+  both([[16, -4], [30, -10], [23, 8], [14, 10]], light);
+  both([[21, -1], [28, 3], [22, 8], [17, 7]], mid);
+  both([[18, -15], [22, -20], [24, -4], [20, 0]], "#7c868b");
 
-  ctx.fillStyle = "#ffd040";
+  both([[7, 4], [15, 11], [10, 24], [4, 19], [3, 9]], "#d9dee0");
+  both([[11, 13], [18, 22], [12, 25], [8, 20]], shadow);
+  both([[18, 4], [26, 9], [22, 16], [16, 13]], light);
+  both([[25, 8], [31, 11], [28, 14], [24, 13]], "#cfd6d9");
+  both([[27, 10], [33, 10], [31, 13], [27, 13]], "#b9c2c6");
+
+  both([[5, 12], [9, 24], [3, 27], [1, 16]], dark);
+  both([[2, 17], [5, 26], [1, 29], [0, 18]], "#293553");
+
+  poly([[-7, 7], [-5, 20], [-2, 25], [2, 25], [5, 20], [7, 7], [4, 4], [-4, 4]], "#1b2948");
+  both([[2, 14], [5, 26], [1, 27], [0.5, 15]], "#313d61");
+
+  poly([[-7, -2], [-9, 10], [-3, 14], [3, 14], [9, 10], [7, -2], [4, -5], [-4, -5]], light);
+  both([[4, -4], [9, -1], [6, 9], [1, 11]], "#cfd6d9");
+  poly([[-5, -1], [0, -4], [5, -1], [2, 6], [-2, 6]], gold);
+  poly([[-2.4, 2], [2.4, 2], [2, 5], [-2, 5]], red, "rgba(60, 20, 20, 0.95)");
+
+  poly([[-6, -12], [6, -12], [7, -5], [3, -2], [-3, -2], [-7, -5]], "#f2f5f6");
+  both([[2, -12], [7, -16], [8, -7], [4, -4]], mid);
+  both([[1, -18], [4, -26], [3, -12], [0, -9]], gold, "rgba(100, 78, 16, 0.9)");
+  poly([[-2.2, -10], [2.2, -10], [1.8, -7.5], [-1.8, -7.5]], red, "rgba(50, 18, 18, 0.9)");
+
+  ctx.fillStyle = sensor;
+  ctx.shadowColor = "rgba(66, 243, 211, 0.9)";
+  ctx.shadowBlur = 6;
+  ctx.fillRect(-3.8 * sx, -7.2 * sy, 2.4 * sx, 1.6 * sy);
+  ctx.fillRect(1.4 * sx, -7.2 * sy, 2.4 * sx, 1.6 * sy);
+
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = panelStroke;
+  ctx.lineWidth = Math.max(0.7, 0.9 * sx);
   ctx.beginPath();
-  ctx.moveTo(-5 * sx, 0 * sy);
-  ctx.lineTo(0, -3 * sy);
-  ctx.lineTo(5 * sx, 0 * sy);
+  ctx.moveTo(-24 * sx, -7 * sy);
+  ctx.lineTo(-15 * sx, -1 * sy);
+  ctx.lineTo(-21 * sx, 7 * sy);
+  ctx.moveTo(24 * sx, -7 * sy);
+  ctx.lineTo(15 * sx, -1 * sy);
+  ctx.lineTo(21 * sx, 7 * sy);
+  ctx.moveTo(-6 * sx, -1 * sy);
   ctx.lineTo(0, 3 * sy);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "#c03030";
-  ctx.fillRect(-1.5 * sx, 2 * sy, 3 * sx, 2.5 * sy);
-
-  ctx.fillStyle = "#e8eaef";
-  ctx.beginPath();
-  ctx.moveTo(-22 * sx, -6 * sy);
-  ctx.lineTo(-14 * sx, -18 * sy);
-  ctx.lineTo(-8 * sx, -14 * sy);
-  ctx.lineTo(-6 * sx, -4 * sy);
-  ctx.lineTo(-10 * sx, 6 * sy);
-  ctx.lineTo(-18 * sx, 4 * sy);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(22 * sx, -6 * sy);
-  ctx.lineTo(14 * sx, -18 * sy);
-  ctx.lineTo(8 * sx, -14 * sy);
-  ctx.lineTo(6 * sx, -4 * sy);
-  ctx.lineTo(10 * sx, 6 * sy);
-  ctx.lineTo(18 * sx, 4 * sy);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#cfd4de";
-  ctx.beginPath();
-  ctx.moveTo(-10 * sx, -2 * sy);
-  ctx.lineTo(-8 * sx, 8 * sy);
-  ctx.lineTo(-4 * sx, 10 * sy);
-  ctx.lineTo(-4 * sx, -2 * sy);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(10 * sx, -2 * sy);
-  ctx.lineTo(8 * sx, 8 * sy);
-  ctx.lineTo(4 * sx, 10 * sy);
-  ctx.lineTo(4 * sx, -2 * sy);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#f0f2f6";
-  ctx.beginPath();
-  ctx.moveTo(-6 * sx, -10 * sy);
-  ctx.lineTo(6 * sx, -10 * sy);
-  ctx.lineTo(7 * sx, -4 * sy);
-  ctx.lineTo(-7 * sx, -4 * sy);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#ffd040";
-  ctx.beginPath();
-  ctx.moveTo(0, -22 * sy);
-  ctx.lineTo(3 * sx, -14 * sy);
-  ctx.lineTo(0, -11 * sy);
-  ctx.lineTo(-3 * sx, -14 * sy);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#c03030";
-  ctx.fillRect(-2 * sx, -8 * sy, 4 * sx, 2 * sy);
-
-  ctx.fillStyle = "#40ff80";
-  ctx.fillRect(-3.5 * sx, -6.5 * sy, 2.5 * sx, 1.5 * sy);
-  ctx.fillRect(1 * sx, -6.5 * sy, 2.5 * sx, 1.5 * sy);
-
-  ctx.fillStyle = "#e0e4ec";
-  ctx.beginPath();
-  ctx.moveTo(-12 * sx, 2 * sy);
-  ctx.lineTo(-18 * sx, 14 * sy);
-  ctx.lineTo(-8 * sx, 12 * sy);
-  ctx.lineTo(-6 * sx, 4 * sy);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(12 * sx, 2 * sy);
-  ctx.lineTo(18 * sx, 14 * sy);
-  ctx.lineTo(8 * sx, 12 * sy);
-  ctx.lineTo(6 * sx, 4 * sy);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(200, 210, 230, 0.55)";
-  ctx.lineWidth = Math.max(0.8, sx);
-  ctx.beginPath();
-  ctx.moveTo(-22 * sx, -8 * sy);
-  ctx.lineTo(-14 * sx, -16 * sy);
-  ctx.moveTo(22 * sx, -8 * sy);
-  ctx.lineTo(14 * sx, -16 * sy);
+  ctx.lineTo(6 * sx, -1 * sy);
   ctx.stroke();
+
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "rgba(80, 245, 220, 0.18)";
+  ctx.beginPath();
+  ctx.ellipse(0, -3 * sy, 7 * sx, 12 * sy, 0, 0, Math.PI * 2);
+  ctx.fill();
 
   ctx.restore();
 }
