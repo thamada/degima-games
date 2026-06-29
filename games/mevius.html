@@ -50,6 +50,9 @@ const WEAPON_DURATION = 540;
 const INVINCIBLE_DURATION = 480;
 const WILDFIRE_DURATION = 180;
 const LEGEND_FADE_FRAMES = 600;
+const BARREL_ROLL_MS = 250;
+const BARREL_ROLL_SPEED_MUL = 3;
+const STRAFE_HOLD_ROLL = 1.18;
 const LEGEND_BOX_H = 86;
 const LEGEND_BOX_W = 624;
 const LEGEND_MARGIN = 4;
@@ -166,7 +169,9 @@ function getLegendAlpha() {
 
 function init(resetScore) {
   player = {
-    x: W / 2 - 16, y: H - 76, w: 32, h: 36, speed: 4.5, bank: 0, afterburner: 0, afterburnerFrame: 0,
+    x: W / 2 - 16, y: H - 76, w: 32, h: 36, speed: 4.5, vx: 0,
+    roll: 0, rollDir: 0, strafeDir: 0, strafeStart: 0, strafeRolling: false, rollDone: false, rollFlash: 0,
+    afterburner: 0, afterburnerFrame: 0,
     airWeapon: "normal", groundWeapon: "normal", airWeaponTimer: 0, airWeaponLevel: 0, groundWeaponTimer: 0,
     missileWeaponTimer: 0, missileLaunchTimer: 0, missileLevel: 0,
     barrier: 0, barrierFlash: 0, invincibleTimer: 0,
@@ -1263,7 +1268,14 @@ function updateExplosion() {
         player.y = H - 70;
         player.w = FIGHTER_SIZE.w;
         player.h = FIGHTER_SIZE.h;
-        player.bank = 0;
+        player.vx = 0;
+        player.roll = 0;
+        player.rollDir = 0;
+        player.strafeDir = 0;
+        player.strafeStart = 0;
+        player.strafeRolling = false;
+        player.rollDone = false;
+        player.rollFlash = 0;
         player.afterburner = 0;
         player.afterburnerFrame = 0;
         resetLegendFade();
@@ -1285,12 +1297,88 @@ function updateBurstParticles() {
   }
 }
 
-function updatePlayerBank() {
-  const maxBank = 0.38;
-  let target = 0;
-  if (keys.ArrowLeft) target = -maxBank;
-  else if (keys.ArrowRight) target = maxBank;
-  player.bank += (target - player.bank) * 0.14;
+function getLongitudinalRoll(roll) {
+  const cos = Math.cos(roll);
+  const sin = Math.sin(roll);
+  const flat = Math.abs(cos);
+  const edge = 1 - flat;
+  return { cos, sin, flat, edge, inverted: cos < 0 };
+}
+
+function getBarrelRollMetrics(roll) {
+  return getLongitudinalRoll(roll);
+}
+
+function applyLongitudinalRollTransform(cx, cy, w, h, roll) {
+  const { flat, edge } = getLongitudinalRoll(roll);
+  const span = Math.max(0.12, flat);
+  const edgeWidth = 0.16 + edge * 0.2;
+  ctx.translate(cx, cy);
+  ctx.scale(span + (1 - span) * edgeWidth, 1);
+}
+
+function spawnBarrelRollBurst(cx, cy) {
+  addBurst(cx, cy, 14, ["#fff", "#bdf", "#6cf", "#ff8"]);
+}
+
+function updatePlayerBarrelRoll() {
+  let inputX = 0;
+  if (keys.ArrowLeft) inputX = -1;
+  else if (keys.ArrowRight) inputX = 1;
+
+  if (inputX !== player.strafeDir) {
+    player.strafeDir = inputX;
+    if (inputX !== 0) {
+      player.strafeStart = performance.now();
+      player.roll = 0;
+      player.rollDone = false;
+    }
+  }
+
+  const elapsed = inputX !== 0 ? performance.now() - player.strafeStart : Infinity;
+  const strafeRolling = inputX !== 0 && elapsed < BARREL_ROLL_MS;
+  player.strafeRolling = strafeRolling;
+
+  const speedMul = strafeRolling ? BARREL_ROLL_SPEED_MUL : 1;
+  const maxSpeed = player.speed * speedMul;
+  const accel = 1.05 * speedMul;
+  const friction = 0.72;
+
+  if (inputX !== 0) {
+    player.vx += inputX * accel;
+    player.vx *= strafeRolling ? 0.9 : 0.86;
+  } else {
+    player.vx *= friction;
+  }
+
+  if (Math.abs(player.vx) < 0.06) player.vx = 0;
+  player.vx = Math.max(-maxSpeed, Math.min(maxSpeed, player.vx));
+
+  const prevX = player.x;
+  player.x = Math.max(8, Math.min(W - player.w - 8, player.x + player.vx));
+  if (player.x !== prevX + player.vx) player.vx *= 0.22;
+
+  if (inputX !== 0) {
+    player.rollDir = inputX;
+    if (strafeRolling) {
+      const t = elapsed / BARREL_ROLL_MS;
+      player.roll = inputX * t * Math.PI * 2;
+      if (t >= 1 && !player.rollDone) {
+        player.rollDone = true;
+        player.rollFlash = 18;
+        spawnBarrelRollBurst(player.x + player.w / 2, player.y + player.h / 2);
+      }
+    } else {
+      const target = inputX * STRAFE_HOLD_ROLL;
+      player.roll += (target - player.roll) * 0.3;
+    }
+  } else {
+    player.rollDir = 0;
+    player.rollDone = false;
+    player.roll += (0 - player.roll) * 0.18;
+  }
+
+  if (player.rollFlash > 0) player.rollFlash--;
 }
 
 function updatePlayerAfterburner() {
@@ -1326,11 +1414,9 @@ function update() {
   const groundScroll = SCROLL_SPEED + wave * 0.05;
   scrollY += groundScroll;
 
-  if (keys.ArrowLeft) player.x = Math.max(8, player.x - player.speed);
-  if (keys.ArrowRight) player.x = Math.min(W - player.w - 8, player.x + player.speed);
+  updatePlayerBarrelRoll();
   if (keys.ArrowUp) player.y = Math.max(H * 0.35, player.y - player.speed);
   if (keys.ArrowDown) player.y = Math.min(H - player.h - 8, player.y + player.speed);
-  updatePlayerBank();
   updatePlayerAfterburner();
 
   if (shootCooldown > 0) shootCooldown--;
@@ -2150,37 +2236,213 @@ function drawAfterburner(sx, sy, intensity, frame) {
   ctx.restore();
 }
 
-function drawPlayer(x, y, w, h, bank = 0, afterburner = 0, afterburnerFrame = 0) {
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const sx = w / 32;
-  const sy = h / 36;
+function drawBarrelRollAura(cx, cy, w, h, roll, rollDir, rollFlash) {
+  if (Math.abs(rollDir) === 0 && rollFlash <= 0) return;
 
   ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const { edge } = getBarrelRollMetrics(roll);
+  const ringAlpha = 0.12 + edge * 0.42 + (rollFlash > 0 ? rollFlash / 18 * 0.45 : 0);
+  ctx.strokeStyle = `rgba(120, 220, 255, ${ringAlpha})`;
+  ctx.lineWidth = 1.4 + edge * 2.4;
 
-  ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+  for (let i = -3; i <= 3; i++) {
+    const phase = roll + i * 0.55;
+    const ringFlat = Math.abs(Math.cos(phase));
+    const ringY = cy + i * h * 0.11;
+    ctx.beginPath();
+    ctx.ellipse(cx, ringY, w * Math.max(0.08, ringFlat * 0.42), h * 0.07, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   ctx.beginPath();
-  ctx.ellipse(cx, cy + h * 0.34, w * 0.42, h * 0.12, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.moveTo(cx, cy - h * 0.28);
+  for (let t = 0; t <= 1.001; t += 0.04) {
+    const phase = roll + t * Math.PI * 2 * rollDir;
+    const ringFlat = Math.abs(Math.cos(phase));
+    const py = cy - h * 0.28 + t * h * 0.56;
+    const halfW = w * Math.max(0.06, ringFlat * 0.1);
+    ctx.lineTo(cx - halfW, py);
+    ctx.lineTo(cx + halfW, py);
+  }
+  ctx.stroke();
 
-  ctx.translate(cx, cy);
-  ctx.rotate(bank);
+  if (rollFlash > 0) {
+    ctx.globalAlpha = rollFlash / 18 * 0.62;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * 1.05);
+    grad.addColorStop(0, "rgba(255, 255, 255, 0.95)");
+    grad.addColorStop(0.35, "rgba(130, 230, 255, 0.55)");
+    grad.addColorStop(1, "rgba(40, 120, 255, 0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, w * 0.95, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
 
-  if (afterburner > 0.04) drawAfterburner(sx, sy, afterburner, afterburnerFrame);
+function drawBarrelRollGhosts(cx, cy, w, h, roll, rollDir) {
+  if (Math.abs(rollDir) === 0) return;
+  for (let i = 5; i >= 1; i--) {
+    const lagRoll = roll - i * 0.62 * rollDir;
+    ctx.save();
+    ctx.globalAlpha = 0.06 + (6 - i) * 0.045;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.translate(cx, cy + i * 4.8);
+    applyLongitudinalRollTransform(0, 0, w, h, lagRoll);
+    ctx.fillStyle = "rgba(170, 230, 255, 0.85)";
+    ctx.beginPath();
+    ctx.moveTo(0, -h * 0.44);
+    ctx.lineTo(w * 0.46, h * 0.18);
+    ctx.lineTo(0, h * 0.34);
+    ctx.lineTo(-w * 0.46, h * 0.18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
 
-  ctx.fillStyle = "#4f5868";
+function drawBarrelRollSparks(cx, cy, w, h, roll) {
+  const { edge, flat } = getBarrelRollMetrics(roll);
+  if (edge < 0.62) return;
+  const spark = (edge - 0.62) / 0.38;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const side of [-1, 1]) {
+    ctx.globalAlpha = spark * 0.85;
+    ctx.strokeStyle = "rgba(255, 240, 180, 0.9)";
+    ctx.lineWidth = 1.2 + spark * 1.6;
+    ctx.beginPath();
+    ctx.moveTo(side * w * 0.08, -h * 0.18);
+    ctx.lineTo(side * w * (0.34 + spark * 0.22), 0);
+    ctx.lineTo(side * w * 0.08, h * 0.18);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+    ctx.beginPath();
+    ctx.arc(side * w * (0.28 + spark * 0.12), 0, 1.4 + spark * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = spark * 0.55;
+  for (let i = 0; i < 4; i++) {
+    const yOff = (-h * 0.24 + i * h * 0.16) * (flat > 0.2 ? 1 : 0.55);
+    ctx.fillStyle = i % 2 ? "rgba(180, 240, 255, 0.9)" : "rgba(255, 220, 120, 0.9)";
+    ctx.beginPath();
+    ctx.arc(Math.sin(roll + i) * w * 0.05, yOff, 1 + spark * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBarrelRollStreaks(cx, cy, w, h, roll, rollDir, vx) {
+  if (Math.abs(rollDir) === 0 && Math.abs(vx) < 0.5) return;
+  const intensity = Math.min(1, Math.abs(vx) / player.speed);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 0.18 + intensity * 0.42;
+  ctx.strokeStyle = "rgba(150, 220, 255, 0.9)";
+  ctx.lineWidth = 1.2;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 5; i++) {
+    const y0 = cy - h * (0.18 + i * 0.07);
+    const y1 = cy + h * (0.22 + i * 0.05);
+    ctx.beginPath();
+    ctx.moveTo(cx, y0);
+    ctx.quadraticCurveTo(cx, (y0 + y1) * 0.5, cx, y1);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function applyBarrelRollTransform(cx, cy, w, h, roll) {
+  applyLongitudinalRollTransform(cx, cy, w, h, roll);
+}
+
+function drawRollStreaks(cx, cy, w, h, roll, vx) {
+  const intensity = Math.min(1, Math.abs(vx) / player.speed);
+  if (intensity < 0.12 || Math.abs(roll) < 0.02) return;
+  const dir = -Math.sign(vx);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 0.16 + intensity * 0.28;
+  ctx.strokeStyle = "rgba(170, 215, 255, 0.85)";
+  ctx.lineWidth = Math.max(0.55, w / 32 * 0.45);
+  ctx.lineCap = "round";
+  for (let i = 0; i < 3; i++) {
+    const yOff = (-h * 0.18 + i * h * 0.14);
+    const len = (8 + i * 4) * (w / 32) * intensity;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + yOff);
+    ctx.lineTo(cx + dir * len, cy + yOff + h * 0.05);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawRolledWings(sx, sy, roll, fill) {
+  const sin = Math.sin(roll);
+  const tilt = Math.min(1, Math.abs(sin));
+  const leftAlpha = 0.5 + 0.5 * (0.5 + sin * 0.5);
+  const rightAlpha = 0.5 + 0.5 * (0.5 - sin * 0.5);
+  const leftScale = 1 + tilt * 0.14 * (sin > 0 ? 1 : -1);
+  const rightScale = 1 - tilt * 0.14 * (sin > 0 ? 1 : -1);
+
+  ctx.fillStyle = fill;
+  ctx.save();
+  ctx.globalAlpha *= leftAlpha;
+  ctx.scale(Math.max(0.82, leftScale), 1);
   ctx.beginPath();
   ctx.moveTo(-4 * sx, -2 * sy);
   ctx.lineTo(-15 * sx, 8 * sy);
   ctx.lineTo(-4 * sx, 6 * sy);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha *= rightAlpha;
+  ctx.scale(Math.max(0.82, rightScale), 1);
   ctx.beginPath();
   ctx.moveTo(4 * sx, -2 * sy);
   ctx.lineTo(15 * sx, 8 * sy);
   ctx.lineTo(4 * sx, 6 * sy);
   ctx.closePath();
   ctx.fill();
+  ctx.restore();
+}
+
+function drawPlayer(
+  x, y, w, h,
+  roll = 0, strafeRolling = false,
+  afterburner = 0, afterburnerFrame = 0, vx = 0, rollDir = 0, rollFlash = 0
+) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const sx = w / 32;
+  const sy = h / 36;
+  const { flat, edge, inverted } = getLongitudinalRoll(roll);
+
+  ctx.save();
+
+  if (strafeRolling) {
+    drawBarrelRollAura(cx, cy, w, h, roll, rollDir, rollFlash);
+    drawBarrelRollGhosts(cx, cy, w, h, roll, rollDir);
+    drawBarrelRollStreaks(cx, cy, w, h, roll, rollDir, vx);
+  } else {
+    drawRollStreaks(cx, cy, w, h, roll, vx);
+  }
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + h * (0.34 + edge * 0.04), w * (0.18 + flat * 0.28), h * (0.1 + edge * 0.04), 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  applyLongitudinalRollTransform(cx, cy, w, h, roll);
+  if (strafeRolling) drawBarrelRollSparks(0, 0, w, h, roll);
+  if (inverted) ctx.filter = "brightness(0.78) saturate(0.85)";
+
+  if (afterburner > 0.04) drawAfterburner(sx, sy, afterburner, afterburnerFrame);
+
+  drawRolledWings(sx, sy, roll, "#4f5868");
 
   const fuselage = ctx.createLinearGradient(-8 * sx, 0, 8 * sx, 0);
   fuselage.addColorStop(0, "#5c6678");
@@ -2268,7 +2530,7 @@ function drawXiThruster(sx, sy, frame) {
   ctx.restore();
 }
 
-function drawXiGundam(x, y, w, h, bank, frame) {
+function drawXiGundam(x, y, w, h, roll, strafeRolling, frame, rollDir = 0, rollFlash = 0) {
   const cx = x + w / 2;
   const cy = y + h / 2;
   const sx = w / 48;
@@ -2276,16 +2538,26 @@ function drawXiGundam(x, y, w, h, bank, frame) {
   const transformGlow = player.xiTransformFrame < 24
     ? 1 + (24 - player.xiTransformFrame) / 24 * 0.35
     : 1;
+  const { flat, edge, inverted } = getLongitudinalRoll(roll);
 
   ctx.save();
+
+  if (strafeRolling) {
+    drawBarrelRollAura(cx, cy, w, h, roll, rollDir, rollFlash);
+    drawBarrelRollGhosts(cx, cy, w, h, roll, rollDir);
+    drawBarrelRollStreaks(cx, cy, w, h, roll, rollDir, player.vx);
+  } else {
+    drawRollStreaks(cx, cy, w, h, roll, player.vx);
+  }
+
   ctx.fillStyle = "rgba(0, 0, 0, 0.32)";
   ctx.beginPath();
-  ctx.ellipse(cx, cy + h * 0.38, w * 0.55, h * 0.1, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy + h * (0.38 + edge * 0.04), w * (0.2 + flat * 0.32), h * (0.1 + edge * 0.04), 0, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.translate(cx, cy);
-  ctx.rotate(bank * 0.5);
+  applyLongitudinalRollTransform(cx, cy, w, h, roll);
   ctx.scale(transformGlow, transformGlow);
+  if (strafeRolling) drawBarrelRollSparks(0, 0, w, h, roll);
+  if (inverted) ctx.filter = "brightness(0.78) saturate(0.85)";
 
   drawXiThruster(sx, sy, frame);
 
@@ -3471,9 +3743,16 @@ function draw() {
         ctx.shadowBlur = 14 + backlit * 10;
       }
       if (player.xiMode) {
-        drawXiGundam(player.x, player.y, player.w, player.h, player.bank, player.afterburnerFrame);
+        drawXiGundam(
+          player.x, player.y, player.w, player.h,
+          player.roll, player.strafeRolling, player.afterburnerFrame, player.rollDir, player.rollFlash
+        );
       } else {
-        drawPlayer(player.x, player.y, player.w, player.h, player.bank, player.afterburner, player.afterburnerFrame);
+        drawPlayer(
+          player.x, player.y, player.w, player.h,
+          player.roll, player.strafeRolling,
+          player.afterburner, player.afterburnerFrame, player.vx, player.rollDir, player.rollFlash
+        );
       }
       ctx.restore();
     }
