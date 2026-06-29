@@ -210,7 +210,8 @@ degima-games/
 
 | コマンド | 説明 |
 |----------|------|
-| `make run` | 依存関係インストール後、`npm start` で開発サーバー起動（http://localhost:3000） |
+| `make` | デフォルトターゲット（`run` と同じ）。依存関係インストール後、`npm start` で開発サーバー起動（http://localhost:3000） |
+| `make run` | 上記と同じ |
 | `make clean` | `.local`、`node_modules` を削除 |
 
 Makefile は `.local` 配下に Node.js v22.14.0 を取得し、プロジェクトローカルで npm を実行します。`serve` が `games/` ディレクトリを静的配信します。

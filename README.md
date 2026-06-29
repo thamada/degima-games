@@ -52,10 +52,10 @@ Makefile が Node.js v22.14.0 を `.local/` 以下に自動取得するため、
 ### 開発（ローカルサーバー起動）
 
 ```bash
-make run
+make
 ```
 
-http://localhost:3000 が起動し、ブラウザでサンプルゲームを操作できます。
+`make run` と同じです。http://localhost:3000 が起動し、ブラウザでサンプルゲームを操作できます。
 
 ### クリーンアップ
 
