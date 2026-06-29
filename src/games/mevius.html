@@ -43,10 +43,13 @@ const WORLD_H = 4800;
 let player, zappers, blasters, flames, missiles, airEnemies, groundTargets, enemyBullets, items;
 let scrollY, score, lives, wave, gameOver, keys = {}, shootCooldown = 0, bombCooldown = 0;
 let explosion = null, spawnTimer = 0, groundSpawnTimer = 0, wildfire = null, legendFadeTimer = 0;
+let wildfireParticles = [];
+let wildfireItemDelayTimer = 0;
 const WEAPON_DURATION = 540;
 const INVINCIBLE_DURATION = 480;
 const WILDFIRE_DURATION = 180;
 const LEGEND_FADE_FRAMES = 600;
+const WILDFIRE_ITEM_DELAY_FRAMES = 600;
 const POWERUP_DROP_RATE = 0.17;
 const MAX_BARRIER = 8;
 const FUNNEL_LEVELS = [
@@ -121,9 +124,12 @@ function init(resetScore) {
   spawnTimer = 0;
   groundSpawnTimer = 0;
   wildfire = null;
+  wildfireParticles = [];
+  wildfireItemDelayTimer = WILDFIRE_ITEM_DELAY_FRAMES;
   applyStartingLoadout();
   seedInitialGround();
   resetLegendFade();
+  spawnPowerUp(player.x + player.w / 2, player.y - 52, "wildfire");
 }
 
 function seedInitialGround() {
@@ -219,13 +225,13 @@ function isFunnelMissileItem(type) {
   return type === "funnelMissile" || type.startsWith("funnelMissile");
 }
 
-function spawnPowerUp(x, y) {
+function spawnPowerUp(x, y, type) {
   items.push({
     x: x - 10,
     y: y - 10,
     w: 20,
     h: 20,
-    type: pickPowerUpType(),
+    type: type || pickPowerUpType(),
     bob: Math.random() * Math.PI * 2,
     timer: 0,
     life: 480
@@ -239,8 +245,60 @@ function applyBarrierItem(type) {
   player.barrierFlash = 24;
 }
 
+function spawnWildfireParticle(x, y, vx, vy, kind, life, size) {
+  wildfireParticles.push({
+    x, y, vx, vy, kind,
+    life,
+    maxLife: life,
+    size,
+    rot: Math.random() * Math.PI * 2,
+    spin: (Math.random() - 0.5) * 0.12
+  });
+}
+
+function burstWildfireParticles(cx, cy, count, spread, speed) {
+  for (let i = 0; i < count; i++) {
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.95;
+    const spd = speed * (0.35 + Math.random() * 0.75);
+    const roll = Math.random();
+    const kind = roll < 0.45 ? "fire" : roll < 0.72 ? "smoke" : "spark";
+    spawnWildfireParticle(
+      cx + (Math.random() - 0.5) * spread,
+      cy + (Math.random() - 0.5) * spread * 0.35,
+      Math.cos(angle) * spd + (Math.random() - 0.5) * 1.2,
+      Math.sin(angle) * spd,
+      kind,
+      22 + Math.floor(Math.random() * 40),
+      kind === "spark" ? 1.5 + Math.random() * 2.5 : 4 + Math.random() * 14
+    );
+  }
+}
+
 function triggerWildfire() {
-  wildfire = { timer: WILDFIRE_DURATION, frame: 0 };
+  wildfire = {
+    timer: WILDFIRE_DURATION,
+    frame: 0,
+    flash: 24,
+    shake: 18,
+    shockwave: 10,
+    cores: []
+  };
+  wildfireParticles = [];
+
+  for (let i = 0; i < 9; i++) {
+    const cx = 44 + (W - 88) * (i / 8) + (Math.random() - 0.5) * 36;
+    const cy = H * (0.56 + Math.random() * 0.34);
+    wildfire.cores.push({
+      x: cx,
+      y: cy,
+      phase: Math.random() * Math.PI * 2,
+      power: 0.72 + Math.random() * 0.28
+    });
+    burstWildfireParticles(cx, cy, 32, 48, 7);
+  }
+  burstWildfireParticles(W / 2, H * 0.8, 64, W * 0.55, 9);
+  burstWildfireParticles(W * 0.25, H * 0.7, 24, 80, 6);
+  burstWildfireParticles(W * 0.75, H * 0.72, 24, 80, 6);
 
   for (const g of groundTargets) {
     if (!g.alive) continue;
@@ -248,41 +306,61 @@ function triggerWildfire() {
     if (sy < -g.h || sy > H) continue;
     g.alive = false;
     score += g.score;
-    addBurst(g.x + g.w / 2, sy + g.h / 2, 16, ["#f80", "#ff0", "#f60", "#fff"]);
+    burstWildfireParticles(g.x + g.w / 2, sy + g.h / 2, 14, 24, 5);
+    addBurst(g.x + g.w / 2, sy + g.h / 2, 8, ["#fff", "#ff0", "#f80", "#f60"]);
   }
 
   enemyBullets = enemyBullets.filter(b => {
     if (b.kind !== "ground") return true;
     const sy = b.y + b.h / 2;
     if (sy < H * 0.3) return true;
-    addBurst(b.x + b.w / 2, sy, 5, ["#f80", "#ff0", "#fa0"]);
+    burstWildfireParticles(b.x + b.w / 2, sy, 4, 10, 3);
     return false;
   });
-
-  for (let x = 0; x < W; x += 32) {
-    addBurst(x + Math.random() * 16, H * 0.55 + Math.random() * (H * 0.4), 6, ["#f80", "#ff0", "#f60"]);
-  }
-  addBurst(W / 2, H * 0.72, 36, ["#f80", "#ff0", "#fa0", "#fff", "#f60"]);
 }
 
 function updateWildfire() {
   if (!wildfire) return;
   wildfire.frame++;
   wildfire.timer--;
-  if (wildfire.timer <= 0) {
-    wildfire = null;
-    return;
+  wildfire.shockwave += 5.5 + wildfire.frame * 0.1;
+  if (wildfire.flash > 0) wildfire.flash--;
+  if (wildfire.shake > 0.35) wildfire.shake *= 0.88;
+  else wildfire.shake = 0;
+
+  for (let i = wildfireParticles.length - 1; i >= 0; i--) {
+    const p = wildfireParticles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    if (p.kind === "smoke") {
+      p.vy -= 0.06;
+      p.vx *= 0.985;
+    } else if (p.kind === "fire") {
+      p.vy -= 0.12;
+      p.vx += (Math.random() - 0.5) * 0.08;
+    } else {
+      p.vy += 0.04;
+    }
+    p.life--;
+    p.rot += p.spin;
+    if (p.life <= 0) wildfireParticles.splice(i, 1);
   }
-  if (wildfire.frame % 5 === 0) {
-    for (let i = 0; i < 4; i++) {
-      addBurst(
-        Math.random() * W,
-        H * 0.42 + Math.random() * (H * 0.55),
-        2,
-        ["#f80", "#ff0", "#f60", "#fff"]
-      );
+
+  if (wildfire.frame % 2 === 0) {
+    for (const core of wildfire.cores) {
+      if (Math.random() < 0.65) burstWildfireParticles(core.x, core.y, 2, 22, 2.8);
     }
   }
+  if (wildfire.frame % 8 === 0 && Math.random() < 0.5) {
+    burstWildfireParticles(Math.random() * W, H * (0.5 + Math.random() * 0.45), 6, 30, 4);
+  }
+
+  if (wildfire.timer <= 0) {
+    wildfire = null;
+    wildfireParticles = [];
+    return;
+  }
+
   if (wildfire.frame % 18 === 0) {
     for (const g of groundTargets) {
       if (!g.alive) continue;
@@ -292,10 +370,212 @@ function updateWildfire() {
       if (g.hp <= 0) {
         g.alive = false;
         score += g.score;
-        addBurst(g.x + g.w / 2, sy + g.h / 2, 10, ["#f80", "#ff0", "#f60"]);
+        burstWildfireParticles(g.x + g.w / 2, sy + g.h / 2, 10, 20, 4);
+        addBurst(g.x + g.w / 2, sy + g.h / 2, 6, ["#fff", "#ff0", "#f80"]);
       }
     }
   }
+}
+
+function getWildfireShake() {
+  if (!wildfire || wildfire.shake <= 0.35) return { x: 0, y: 0 };
+  return {
+    x: (Math.random() - 0.5) * wildfire.shake,
+    y: (Math.random() - 0.5) * wildfire.shake * 0.65
+  };
+}
+
+function getWildfireIntensity() {
+  if (!wildfire || wildfire.timer <= 0) return 0;
+  const ratio = wildfire.timer / WILDFIRE_DURATION;
+  const burstBoost = wildfire.frame < 50 ? 1 + (50 - wildfire.frame) / 50 : 1;
+  return ratio * burstBoost;
+}
+
+function drawBlastCloud(cx, cy, radius, intensity, frame, phase) {
+  const rise = Math.sin(frame * 0.06 + phase) * 6;
+  const cyR = cy - rise;
+  const r = radius * (0.92 + Math.sin(frame * 0.09 + phase) * 0.08);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  const smokeGrad = ctx.createRadialGradient(cx, cyR - r * 0.15, r * 0.05, cx, cyR, r * 1.55);
+  smokeGrad.addColorStop(0, `rgba(30, 15, 8, ${0.42 * intensity})`);
+  smokeGrad.addColorStop(0.35, `rgba(70, 28, 12, ${0.28 * intensity})`);
+  smokeGrad.addColorStop(0.7, `rgba(40, 18, 8, ${0.14 * intensity})`);
+  smokeGrad.addColorStop(1, "rgba(20, 8, 4, 0)");
+  ctx.fillStyle = smokeGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cyR - r * 0.1, r * 1.05, r * 0.82, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let l = 0; l < 6; l++) {
+    const ang = phase + l * 1.05 + frame * 0.025;
+    const lx = cx + Math.cos(ang) * r * 0.42;
+    const ly = cyR - r * (0.42 + Math.sin(ang) * 0.12) - Math.sin(frame * 0.07 + l * 1.3) * 10;
+    const lr = r * (0.38 + (l % 3) * 0.08);
+    const lobe = ctx.createRadialGradient(lx, ly, 0, lx, ly, lr);
+    lobe.addColorStop(0, `rgba(255, 245, 210, ${0.75 * intensity})`);
+    lobe.addColorStop(0.3, `rgba(255, 170, 50, ${0.55 * intensity})`);
+    lobe.addColorStop(0.65, `rgba(255, 70, 10, ${0.28 * intensity})`);
+    lobe.addColorStop(1, "rgba(120, 30, 0, 0)");
+    ctx.fillStyle = lobe;
+    ctx.beginPath();
+    ctx.ellipse(lx, ly, lr * 0.95, lr * 0.78, ang * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const body = ctx.createRadialGradient(cx, cyR - r * 0.42, 0, cx, cyR - r * 0.08, r * 1.05);
+  body.addColorStop(0, `rgba(255, 255, 245, ${0.95 * intensity})`);
+  body.addColorStop(0.12, `rgba(255, 240, 160, ${0.88 * intensity})`);
+  body.addColorStop(0.32, `rgba(255, 150, 35, ${0.72 * intensity})`);
+  body.addColorStop(0.58, `rgba(255, 70, 8, ${0.45 * intensity})`);
+  body.addColorStop(0.82, `rgba(180, 35, 0, ${0.18 * intensity})`);
+  body.addColorStop(1, "rgba(80, 15, 0, 0)");
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.ellipse(cx, cyR - r * 0.22, r * 0.88, r * 1.02, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const core = ctx.createRadialGradient(cx, cyR - r * 0.38, 0, cx, cyR - r * 0.32, r * 0.38);
+  core.addColorStop(0, `rgba(255, 255, 255, ${intensity})`);
+  core.addColorStop(0.35, `rgba(255, 255, 220, ${0.85 * intensity})`);
+  core.addColorStop(0.7, `rgba(255, 220, 80, ${0.4 * intensity})`);
+  core.addColorStop(1, "rgba(255, 160, 40, 0)");
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(cx, cyR - r * 0.35, r * 0.36, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawWildfireShockwave(intensity) {
+  if (!wildfire) return;
+  const r = wildfire.shockwave;
+  const alpha = Math.max(0, 1 - r / (W * 0.95)) * intensity * 0.75;
+  if (alpha <= 0.01) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (let ring = 0; ring < 3; ring++) {
+    const rr = r - ring * 18;
+    if (rr <= 0) continue;
+    ctx.strokeStyle = `rgba(255, ${220 - ring * 30}, ${120 - ring * 25}, ${alpha * (0.55 - ring * 0.12)})`;
+    ctx.lineWidth = 6 - ring * 1.5;
+    ctx.beginPath();
+    ctx.ellipse(W / 2, H * 0.74, rr * 1.15, rr * 0.22, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawWildfireParticles(intensity) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const p of wildfireParticles) {
+    const t = p.life / p.maxLife;
+    const alpha = t * intensity;
+    if (alpha <= 0.02) continue;
+    if (p.kind === "smoke") {
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * t);
+      grad.addColorStop(0, `rgba(50, 25, 12, ${alpha * 0.35})`);
+      grad.addColorStop(0.5, `rgba(30, 12, 6, ${alpha * 0.2})`);
+      grad.addColorStop(1, "rgba(10, 5, 2, 0)");
+      ctx.fillStyle = grad;
+    } else if (p.kind === "fire") {
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * t);
+      grad.addColorStop(0, `rgba(255, 255, 220, ${alpha * 0.9})`);
+      grad.addColorStop(0.35, `rgba(255, 160, 40, ${alpha * 0.65})`);
+      grad.addColorStop(1, "rgba(255, 40, 0, 0)");
+      ctx.fillStyle = grad;
+    } else {
+      ctx.fillStyle = `rgba(255, 255, 200, ${alpha * 0.95})`;
+    }
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y, p.size * t, p.size * t * 0.65, p.rot, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawWildfireBackdrop() {
+  if (!wildfire || wildfire.timer <= 0) return;
+  const intensity = getWildfireIntensity();
+  const frame = wildfire.frame;
+
+  ctx.save();
+  const haze = ctx.createLinearGradient(0, H * 0.2, 0, H);
+  haze.addColorStop(0, `rgba(80, 30, 5, ${0.04 * intensity})`);
+  haze.addColorStop(0.45, `rgba(160, 55, 8, ${0.16 * intensity})`);
+  haze.addColorStop(0.72, `rgba(120, 35, 5, ${0.28 * intensity})`);
+  haze.addColorStop(1, `rgba(40, 10, 0, ${0.38 * intensity})`);
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, H * 0.18, W, H * 0.82);
+
+  const groundGlow = ctx.createRadialGradient(W / 2, H * 0.88, 0, W / 2, H * 0.72, W * 0.72);
+  groundGlow.addColorStop(0, `rgba(255, 140, 30, ${0.22 * intensity})`);
+  groundGlow.addColorStop(0.45, `rgba(255, 70, 10, ${0.12 * intensity})`);
+  groundGlow.addColorStop(1, "rgba(80, 20, 0, 0)");
+  ctx.fillStyle = groundGlow;
+  ctx.fillRect(0, H * 0.35, W, H * 0.65);
+
+  drawWildfireShockwave(intensity);
+
+  for (const core of wildfire.cores) {
+    const swell = 1 + Math.sin(frame * 0.07 + core.phase) * 0.12;
+    const radius = (58 + Math.sin(frame * 0.05 + core.phase * 2) * 14) * swell * (0.55 + intensity * 0.55);
+    drawBlastCloud(core.x, core.y, radius, core.power * intensity * 0.55, frame, core.phase);
+  }
+  ctx.restore();
+}
+
+function drawWildfireFront() {
+  if (!wildfire || wildfire.timer <= 0) return;
+  const intensity = getWildfireIntensity();
+  const frame = wildfire.frame;
+
+  for (const core of wildfire.cores) {
+    const swell = 1 + Math.sin(frame * 0.07 + core.phase) * 0.12;
+    const radius = (62 + Math.sin(frame * 0.05 + core.phase * 2) * 16) * swell * (0.65 + intensity * 0.45);
+    drawBlastCloud(core.x, core.y, radius, core.power * intensity, frame, core.phase + 0.4);
+  }
+
+  drawWildfireParticles(intensity);
+
+  if (wildfire.flash > 0) {
+    const fa = wildfire.flash / 24;
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 248, 220, ${fa * 0.62})`;
+    ctx.fillRect(0, 0, W, H);
+    const coreFlash = ctx.createRadialGradient(W / 2, H * 0.65, 0, W / 2, H * 0.55, W * 0.55);
+    coreFlash.addColorStop(0, `rgba(255, 255, 255, ${fa * 0.75})`);
+    coreFlash.addColorStop(0.35, `rgba(255, 220, 120, ${fa * 0.35})`);
+    coreFlash.addColorStop(1, "rgba(255, 120, 0, 0)");
+    ctx.fillStyle = coreFlash;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+}
+
+function drawWildfirePlayerGlow(x, y, w, h) {
+  if (!wildfire || wildfire.timer <= 0) return;
+  const intensity = getWildfireIntensity();
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const rim = ctx.createRadialGradient(cx, cy, w * 0.2, cx, cy, w * 1.4);
+  rim.addColorStop(0, `rgba(255, 180, 60, ${0.35 * intensity})`);
+  rim.addColorStop(0.5, `rgba(255, 90, 20, ${0.18 * intensity})`);
+  rim.addColorStop(1, "rgba(255, 40, 0, 0)");
+  ctx.fillStyle = rim;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, w * 1.1, h * 1.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function collectPowerUp(item) {
@@ -316,7 +596,8 @@ function collectPowerUp(item) {
     addBurst(item.x + item.w / 2, item.y + item.h / 2, 16, ["#ff0", "#fff", "#f8f", "#0ff", "#fa0"]);
   } else if (item.type === "wildfire") {
     triggerWildfire();
-    addBurst(item.x + item.w / 2, item.y + item.h / 2, 20, ["#f80", "#ff0", "#f60", "#fff", "#fa0"]);
+    burstWildfireParticles(item.x + item.w / 2, item.y + item.h / 2, 24, 28, 6);
+    addBurst(item.x + item.w / 2, item.y + item.h / 2, 12, ["#fff", "#ff0", "#f80", "#fa0"]);
   } else {
     applyBarrierItem(item.type);
     addBurst(item.x + item.w / 2, item.y + item.h / 2, 12, ["#8cf", "#adf", "#fff", "#59d7ff"]);
@@ -609,6 +890,13 @@ function update() {
   if (gameOver) return;
   updateBurstParticles();
   updateLegendFade();
+
+  if (wildfireItemDelayTimer > 0) {
+    wildfireItemDelayTimer--;
+    if (wildfireItemDelayTimer === 0) {
+      spawnPowerUp(player.x + player.w / 2, player.y - 52, "wildfire");
+    }
+  }
 
   scrollY += SCROLL_SPEED + wave * 0.05;
 
@@ -1169,42 +1457,15 @@ function drawBackground() {
   ctx.fillRect(0, 0, W, H);
 
   if (burning) {
-    const smoke = ctx.createLinearGradient(0, H * 0.25, 0, H);
-    smoke.addColorStop(0, `rgba(80, 40, 10, ${0.08 * burnRatio})`);
-    smoke.addColorStop(0.45, `rgba(160, 50, 10, ${0.18 * burnRatio})`);
-    smoke.addColorStop(1, `rgba(60, 15, 0, ${0.28 * burnRatio})`);
+    const burnGlow = Math.min(1, burnRatio * 1.2 + (wildfire.frame < 40 ? (40 - wildfire.frame) / 40 : 0));
+    const smoke = ctx.createLinearGradient(0, H * 0.15, 0, H);
+    smoke.addColorStop(0, `rgba(120, 50, 10, ${0.12 * burnGlow})`);
+    smoke.addColorStop(0.4, `rgba(180, 60, 8, ${0.24 * burnGlow})`);
+    smoke.addColorStop(0.72, `rgba(100, 25, 0, ${0.32 * burnGlow})`);
+    smoke.addColorStop(1, `rgba(30, 8, 0, ${0.42 * burnGlow})`);
     ctx.fillStyle = smoke;
-    ctx.fillRect(0, H * 0.25, W, H * 0.75);
+    ctx.fillRect(0, H * 0.15, W, H * 0.85);
   }
-}
-
-function drawWildfireOverlay() {
-  if (!wildfire || wildfire.timer <= 0) return;
-  const ratio = wildfire.timer / WILDFIRE_DURATION;
-  const frame = wildfire.frame;
-
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-
-  for (let x = 0; x < W; x += 18) {
-    const baseY = H - 8 + Math.sin(frame * 0.12 + x * 0.07) * 4;
-    const flameH = 22 + Math.sin(frame * 0.18 + x * 0.11) * 14 + ((x * 17) % 11);
-    const alpha = (0.35 + Math.sin(frame * 0.2 + x) * 0.12) * ratio;
-    const grad = ctx.createLinearGradient(x, baseY, x, baseY - flameH);
-    grad.addColorStop(0, `rgba(255, 220, 80, ${alpha})`);
-    grad.addColorStop(0.35, `rgba(255, 100, 20, ${alpha * 0.85})`);
-    grad.addColorStop(1, "rgba(255, 40, 0, 0)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(x, baseY - flameH, 14, flameH);
-  }
-
-  for (let band = 0; band < 3; band++) {
-    const y = H * (0.45 + band * 0.16) + Math.sin(frame * 0.08 + band) * 6;
-    ctx.fillStyle = `rgba(255, 90, 10, ${(0.06 + band * 0.03) * ratio})`;
-    ctx.fillRect(0, y, W, 28 + band * 8);
-  }
-
-  ctx.restore();
 }
 
 function drawAfterburner(sx, sy, intensity, frame) {
@@ -2124,8 +2385,12 @@ function drawLayerLegend() {
 }
 
 function draw() {
+  const shake = getWildfireShake();
+  ctx.save();
+  ctx.translate(shake.x, shake.y);
+
   drawBackground();
-  drawWildfireOverlay();
+  drawWildfireBackdrop();
 
   for (const g of groundTargets) {
     if (g.alive) drawGroundTarget(g, worldToScreen(g.worldY));
@@ -2159,15 +2424,23 @@ function draw() {
     if (player.invincibleTimer > 0) {
       drawInvincibleAura(player.x, player.y, player.w, player.h, player.invincibleTimer);
     }
+    drawWildfirePlayerGlow(player.x, player.y, player.w, player.h);
     const blinkOff = player.invincibleTimer > 0 && Math.floor(player.invincibleTimer / 4) % 2 === 0;
     if (!blinkOff) {
       ctx.save();
       if (player.invincibleTimer > 0) ctx.globalAlpha = 0.82;
+      if (wildfire && wildfire.timer > 0) {
+        const backlit = getWildfireIntensity();
+        ctx.shadowColor = `rgba(255, ${120 + backlit * 80}, 20, ${0.55 * backlit})`;
+        ctx.shadowBlur = 14 + backlit * 10;
+      }
       drawPlayer(player.x, player.y, player.w, player.h, player.bank, player.afterburner, player.afterburnerFrame);
       ctx.restore();
     }
     drawPlayerBarrier(player.x, player.y, player.w, player.h, player.barrier, player.barrierFlash);
   }
+
+  drawWildfireFront();
 
   drawBursts();
   drawExplosion();
@@ -2189,6 +2462,8 @@ function draw() {
     ctx.fillText("Press R to restart", W / 2, H / 2 + 20);
     ctx.textAlign = "left";
   }
+
+  ctx.restore();
 }
 
 function loop() {
