@@ -25,7 +25,7 @@ canvas {
   height: auto;
   display: block;
 }
-#info { flex-shrink: 0; font-size: 11px; line-height: 1.2; margin: 0; }
+#info { flex-shrink: 0; font-size: 13px; line-height: 1.3; margin: 0; }
 </style>
 </head>
 <body>
@@ -41,7 +41,7 @@ const SCROLL_SPEED = 1.2;
 const WORLD_H = 4800;
 
 let player, zappers, blasters, flames, missiles, airEnemies, groundTargets, enemyBullets, items;
-let scrollY, score, lives, wave, gameOver, keys = {}, shootCooldown = 0, bombCooldown = 0;
+let scrollY, score, lives, wave, gameOver, paused = false, keys = {}, shootCooldown = 0, bombCooldown = 0;
 let explosion = null, spawnTimer = 0, groundSpawnTimer = 0, wildfire = null, legendFadeTimer = 0;
 let wildfireParticles = [];
 let wildfireItemDelayTimer = 0;
@@ -50,6 +50,10 @@ const WEAPON_DURATION = 540;
 const INVINCIBLE_DURATION = 480;
 const WILDFIRE_DURATION = 180;
 const LEGEND_FADE_FRAMES = 600;
+const LEGEND_BOX_H = 86;
+const LEGEND_BOX_W = 624;
+const LEGEND_MARGIN = 4;
+const LEGEND_AREA_H = LEGEND_BOX_H + LEGEND_MARGIN;
 const WILDFIRE_ITEM_DELAY_FRAMES = 600;
 const XI_ITEM_DELAY_FRAMES = 900;
 const POWERUP_DROP_RATE = 0.17;
@@ -156,6 +160,7 @@ function updateLegendFade() {
 }
 
 function getLegendAlpha() {
+  if (paused) return 1;
   return Math.max(0, legendFadeTimer / LEGEND_FADE_FRAMES);
 }
 
@@ -182,6 +187,7 @@ function init(resetScore) {
     wave = 1;
   }
   gameOver = false;
+  paused = false;
   shootCooldown = 0;
   bombCooldown = 0;
   explosion = null;
@@ -1300,6 +1306,7 @@ function update() {
     return;
   }
   if (gameOver) return;
+  if (paused) return;
   updateBurstParticles();
   updateLegendFade();
 
@@ -1590,7 +1597,7 @@ function update() {
       e.x += Math.sin(e.phase + e.y * 0.02) * 2.5;
     }
     e.shootTimer--;
-    if (e.shootTimer <= 0 && e.y > 20 && e.y < H - 60) {
+    if (e.shootTimer <= 0 && e.y > 20 && e.y < H - LEGEND_AREA_H) {
       enemyBullets.push({
         kind: "air",
         x: e.x + e.w / 2 - 2,
@@ -3110,124 +3117,144 @@ function drawLayerLegend() {
   const alpha = getLegendAlpha();
   if (alpha <= 0) return;
 
+  const boxX = 8;
+  const boxY = H - LEGEND_BOX_H - LEGEND_MARGIN;
+  const row1 = boxY + 18;
+  const row2 = boxY + 40;
+  const row3Icon = boxY + 58;
+  const row3Text = boxY + 70;
+  const row4 = boxY + 82;
+
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = "rgba(2, 6, 18, 0.72)";
-  roundRect(8, H - 56, 360, 56, 5);
+  ctx.fillStyle = "rgba(2, 6, 18, 0.82)";
+  roundRect(boxX, boxY, LEGEND_BOX_W, LEGEND_BOX_H, 6);
   ctx.fill();
 
   ctx.fillStyle = "#35f4ff";
-  ctx.fillRect(14, H - 43, 14, 3);
+  ctx.fillRect(boxX + 10, row1 - 11, 20, 4);
   ctx.fillStyle = "#eaffff";
-  ctx.font = "10px monospace";
-  ctx.fillText("AIR: SPACE", 32, H - 38);
+  ctx.font = "12px monospace";
+  ctx.fillText("AIR: SPACE", boxX + 36, row1);
 
   ctx.strokeStyle = "#ffe570";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.arc(118, H - 40, 6, 0, Math.PI * 2);
+  ctx.arc(boxX + 138, row1 - 7, 8, 0, Math.PI * 2);
   ctx.stroke();
   ctx.fillStyle = "#ffe570";
-  ctx.fillText("GROUND: X", 130, H - 38);
+  ctx.fillText("GROUND: X", boxX + 154, row1);
 
+  ctx.font = "11px monospace";
+  ctx.fillStyle = "#ddd";
+
+  let ix = boxX + 10;
   ctx.fillStyle = "#f80";
   ctx.beginPath();
-  ctx.moveTo(14, H - 24);
-  ctx.lineTo(20, H - 18);
-  ctx.lineTo(8, H - 18);
+  ctx.moveTo(ix, row2 - 11);
+  ctx.lineTo(ix + 9, row2 - 2);
+  ctx.lineTo(ix - 9, row2 - 2);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = "#ccc";
-  ctx.font = "9px monospace";
-  ctx.fillText("FLM", 24, H - 18);
+  ctx.fillStyle = "#ddd";
+  ctx.fillText("FLM", ix + 14, row2);
 
+  ix = boxX + 62;
   ctx.strokeStyle = "#59d7ff";
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(104, H - 21, 4, 0, Math.PI * 2);
+  ctx.arc(ix, row2 - 6, 5, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = "#ccc";
-  ctx.fillText("B1", 112, H - 18);
+  ctx.fillStyle = "#ddd";
+  ctx.fillText("B1", ix + 9, row2);
+
+  ix = boxX + 102;
   ctx.beginPath();
-  ctx.arc(134, H - 21, 5, 0, Math.PI * 2);
+  ctx.arc(ix, row2 - 6, 7, 0, Math.PI * 2);
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(134, H - 21, 3, 0, Math.PI * 2);
+  ctx.arc(ix, row2 - 6, 4, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillText("B2", 142, H - 18);
+  ctx.fillText("B2", ix + 11, row2);
+
+  ix = boxX + 146;
   ctx.strokeStyle = "#ffe570";
   ctx.beginPath();
-  ctx.arc(172, H - 21, 6, 0, Math.PI * 2);
+  ctx.arc(ix, row2 - 6, 8, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = "#ccc";
-  ctx.fillText("B8", 182, H - 18);
+  ctx.fillStyle = "#ddd";
+  ctx.fillText("B8", ix + 12, row2);
+
+  ix = boxX + 192;
   ctx.save();
-  ctx.translate(214, H - 21);
+  ctx.translate(ix, row2 - 6);
   ctx.fillStyle = "#ffe570";
-  ctx.fill(buildStarPath(6, 2.5));
+  ctx.fill(buildStarPath(8, 3.5));
   ctx.restore();
-  ctx.fillStyle = "#ccc";
-  ctx.fillText("STR", 228, H - 18);
+  ctx.fillStyle = "#ddd";
+  ctx.fillText("STR", ix + 12, row2);
+
+  ix = boxX + 238;
   ctx.fillStyle = "#f80";
   ctx.beginPath();
-  ctx.moveTo(252, H - 26);
-  ctx.lineTo(258, H - 18);
-  ctx.lineTo(246, H - 18);
+  ctx.moveTo(ix, row2 - 12);
+  ctx.lineTo(ix + 9, row2 - 2);
+  ctx.lineTo(ix - 9, row2 - 2);
   ctx.closePath();
   ctx.fill();
   ctx.strokeStyle = "#ff0";
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(252, H - 26);
-  ctx.lineTo(252, H - 30);
-  ctx.moveTo(252, H - 26);
-  ctx.lineTo(248, H - 22);
-  ctx.moveTo(252, H - 26);
-  ctx.lineTo(256, H - 22);
+  ctx.moveTo(ix, row2 - 12);
+  ctx.lineTo(ix, row2 - 17);
+  ctx.moveTo(ix, row2 - 12);
+  ctx.lineTo(ix - 5, row2 - 7);
+  ctx.moveTo(ix, row2 - 12);
+  ctx.lineTo(ix + 5, row2 - 7);
   ctx.stroke();
-  ctx.fillStyle = "#ccc";
-  ctx.fillText("WFR", 264, H - 18);
+  ctx.fillStyle = "#ddd";
+  ctx.fillText("WFR", ix + 14, row2);
 
   for (let lv = 1; lv <= 4; lv++) {
-    const rx = 14 + (lv - 1) * 28;
+    const rx = boxX + 10 + (lv - 1) * 38;
     ctx.save();
-    ctx.translate(rx + 8, H - 12);
+    ctx.translate(rx + 10, row3Icon);
     ctx.strokeStyle = RAD_ITEM_COLORS[lv - 1];
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
     for (let i = 0; i < lv; i++) {
       const ang = -Math.PI / 2 + (i - (lv - 1) / 2) * 0.45;
       ctx.beginPath();
-      ctx.moveTo(Math.cos(ang) * 2, Math.sin(ang) * 2);
-      ctx.lineTo(Math.cos(ang) * 7, Math.sin(ang) * 7);
+      ctx.moveTo(Math.cos(ang) * 3, Math.sin(ang) * 3);
+      ctx.lineTo(Math.cos(ang) * 10, Math.sin(ang) * 10);
       ctx.stroke();
     }
     ctx.restore();
-    ctx.fillStyle = "#aaa";
-    ctx.font = "8px monospace";
-    ctx.fillText("R" + lv, rx + 4, H - 6);
+    ctx.fillStyle = "#ccc";
+    ctx.font = "10px monospace";
+    ctx.fillText("R" + lv, rx + 5, row3Text);
   }
 
   for (let lv = 1; lv <= 4; lv++) {
-    const lx = 138 + (lv - 1) * 34;
+    const lx = boxX + 176 + (lv - 1) * 42;
     ctx.save();
-    ctx.translate(lx + 8, H - 12);
+    ctx.translate(lx + 10, row3Icon);
     ctx.fillStyle = FUNNEL_ITEM_COLORS[lv - 1];
     ctx.beginPath();
-    ctx.moveTo(0, -5);
-    ctx.lineTo(2.5, 4);
-    ctx.lineTo(0, 2);
-    ctx.lineTo(-2.5, 4);
+    ctx.moveTo(0, -7);
+    ctx.lineTo(3.5, 5);
+    ctx.lineTo(0, 2.5);
+    ctx.lineTo(-3.5, 5);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
-    ctx.fillStyle = "#aaa";
-    ctx.font = "8px monospace";
-    ctx.fillText("F" + lv, lx + 4, H - 6);
+    ctx.fillStyle = "#ccc";
+    ctx.font = "10px monospace";
+    ctx.fillText("F" + lv, lx + 5, row3Text);
   }
 
-  ctx.fillStyle = "#888";
-  ctx.font = "8px monospace";
-  ctx.fillText("R1〜R4=RAD Lv | F1〜F4=誘導弾Lv | WFR=山火事 | Ξ=変形", 14, H - 6);
+  ctx.fillStyle = "#bbb";
+  ctx.font = "10px monospace";
+  ctx.fillText("R1〜R4=RAD Lv | F1〜F4=誘導弾Lv | WFR=山火事 | Ξ=変形", boxX + 10, row4);
   ctx.restore();
 }
 
@@ -3306,7 +3333,22 @@ function draw() {
   drawWeaponStatus();
   drawLivesHUD();
 
+  if (paused) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+    ctx.fillRect(0, 0, W, H);
+  }
+
   drawLayerLegend();
+
+  if (paused) {
+    ctx.fillStyle = "#0f0";
+    ctx.textAlign = "center";
+    ctx.font = "20px monospace";
+    ctx.fillText("PAUSED", W / 2, H / 2 - 10);
+    ctx.font = "14px monospace";
+    ctx.fillText("Press P to resume", W / 2, H / 2 + 20);
+    ctx.textAlign = "left";
+  }
 
   if (gameOver) {
     ctx.fillStyle = "#0f0";
@@ -3333,6 +3375,11 @@ document.addEventListener("keydown", e => {
     e.preventDefault();
   }
   if (e.code === "KeyR" && gameOver) init(true);
+  if (e.code === "KeyP" && !e.repeat && !gameOver && !explosion) {
+    paused = !paused;
+    if (paused) resetLegendFade();
+    e.preventDefault();
+  }
 });
 
 document.addEventListener("keyup", e => {
