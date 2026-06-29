@@ -4,24 +4,19 @@
 
 ## 概要
 
-msapp は Electron 製のレトロゲームアプリです。単一ウィンドウ内のタブで「インベーダー」「ポン」「メビウス」を切り替えてプレイできます。ゲーム本体は HTML5 Canvas 上のスタンドアロン HTML として実装し、Electron から iframe 経由で読み込みます。
+degima-games はブラウザで遊べるレトロゲーム集です。単一ページ内のタブで「インベーダー」「ポン」「メビウス」を切り替えてプレイできます。ゲーム本体は HTML5 Canvas 上のスタンドアロン HTML として実装し、シェルから iframe 経由で読み込みます。
 
 ## ディレクトリ構成
 
 ```
-msapp/
-├── Makefile              # ローカル Node 取得・開発/ビルド用
-├── package.json          # npm スクリプト・electron-builder 設定
-├── resources/
-│   └── icon.png          # アプリアイコン（1024×1024、角丸透過）
-├── src/
-│   ├── electron/
-│   │   └── main.js       # Electron メインプロセス
-│   └── games/
-│       ├── index.html    # タブ付きシェル（起動時エントリ）
-│       ├── invaders.html # インベーダーゲーム
-│       ├── pong.html     # ポンゲーム
-│       └── mevius.html   # メビウス（縦スクロール STG）
+degima-games/
+├── Makefile              # ローカル Node 取得・開発サーバー起動用
+├── package.json          # npm スクリプト・開発サーバー設定
+├── games/
+│   ├── index.html        # タブ付きシェル（起動時エントリ）
+│   ├── invaders.html     # インベーダーゲーム
+│   ├── pong.html         # ポンゲーム
+│   └── mevius.html       # メビウス（縦スクロール STG）
 └── doc/
     ├── design.md         # 本ドキュメント
     ├── ChangeLog.md      # 変更履歴
@@ -31,15 +26,7 @@ msapp/
 
 ## アーキテクチャ
 
-### Electron メインプロセス
-
-- エントリポイント: `src/electron/main.js`（`package.json` の `main` で指定）
-- 起動時に `src/games/index.html` を `loadFile` で表示
-- ウィンドウサイズ: 700×580、タイトル: 「ゲーム」
-- アイコン: `resources/icon.png` をウィンドウ・macOS Dock に設定
-- `nodeIntegration: false`、`contextIsolation: true` でレンダラーをサンドボックス化
-
-### ゲームシェル（index.html）
+### ゲームシェル（games/index.html）
 
 - 高さ 32px のコンパクトなタブバーを画面上部に配置
 - 各ゲームは iframe で読み込み（ゲーム間でスクリプト・状態を分離）
@@ -219,31 +206,11 @@ msapp/
 - 選択中: 明るいグリーン文字（`#6ee06e`）＋下線インジケーター（`#3cb83c`）
 - フォント: 等幅系（SF Mono / Menlo / Consolas）
 
-## ビルド・実行
+## 開発・実行
 
 | コマンド | 説明 |
 |----------|------|
-| `make dev` | 依存関係インストール後、`npm start` で Electron 起動 |
-| `make build-win` | Windows ポータブル版（`dist/myapp.exe`）を生成 |
-| `make build-win-nsis` | Windows NSIS インストーラー（`dist/setup.exe`）を生成 |
-| `make build-mac` | macOS DMG（`dist/myapp.dmg`）を生成 |
-| `make build` | 上記 3 つをすべてビルド |
-| `make clean` | `.local`、`node_modules`、`dist`、`build` を削除 |
+| `make run` | 依存関係インストール後、`npm start` で開発サーバー起動（http://localhost:3000） |
+| `make clean` | `.local`、`node_modules` を削除 |
 
-Makefile は `.local` 配下に Node.js v22.14.0 を取得し、プロジェクトローカルで npm を実行します。
-
-対応する npm スクリプト:
-
-| Make コマンド | npm スクリプト |
-|---------------|----------------|
-| `make build-win` | `npm run build:win` |
-| `make build-win-nsis` | `npm run build:win-nsis` |
-| `make build-mac` | `npm run build:mac` |
-
-## 配布設定（electron-builder）
-
-- `appId`: `cc.degima.msapp`
-- `productName`: `Invaders`
-- `icon`: `resources/icon.png`（角丸透過 PNG。ビルド時に各 OS 向け形式へ変換）
-- 同梱ファイル: `src/**/*`
-- 出力先: `dist/`
+Makefile は `.local` 配下に Node.js v22.14.0 を取得し、プロジェクトローカルで npm を実行します。`serve` が `games/` ディレクトリを静的配信します。

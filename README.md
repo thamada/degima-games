@@ -1,45 +1,39 @@
-# Development environment for building custom Windows app installers on DEGIMA Cloud
+# degima-games
 
-Windows 向けデスクトップアプリのインストーラーを自作するための、Electron ベースの基本的な開発環境です。  
-macOS 向けインストーラー（DMG）の作成にも対応しています。
-
-サンプルとして、タブで切り替えられるレトロゲーム（インベーダー・ポン・メビウス）が同梱されています。アプリ本体やインストーラー設定を差し替えることで、自分用の Windows / macOS アプリをビルドできます。
+ブラウザで遊べるレトロゲーム集です。タブで「インベーダー」「ポン」「メビウス」を切り替えてプレイできます。
 
 ## 技術スタック
 
-- [Electron](https://www.electronjs.org/) — デスクトップアプリの実行基盤
-- [electron-builder](https://www.electron.build/) — インストーラー・配布物の生成
-- HTML5 Canvas — サンプルゲームの描画
+- HTML5 Canvas — ゲーム描画
+- [serve](https://github.com/vercel/serve) — ローカル開発用静的ファイルサーバー
 
 ## ディレクトリ構成
 
 ```
-degima-windows-installer-dev/
-├── Makefile              # 開発・ビルド用（Node.js を .local/ に取得）
-├── package.json          # 依存関係・electron-builder 設定
-├── src/
-│   ├── electron/
-│   │   └── main.js       # Electron メインプロセス
-│   └── games/
-│       ├── index.html    # タブ付きシェル（起動時エントリ）
-│       ├── invaders.html # インベーダーゲーム
-│       ├── pong.html     # ポンゲーム
-│       └── mevius.html   # メビウス（縦スクロール STG）
+degima-games/
+├── Makefile              # 開発用（Node.js を .local/ に取得）
+├── package.json          # 依存関係・開発サーバー設定
+├── games/
+│   ├── index.html        # タブ付きシェル（起動時エントリ）
+│   ├── invaders.html     # インベーダーゲーム
+│   ├── pong.html         # ポンゲーム
+│   └── mevius.html       # メビウス（縦スクロール STG）
 └── doc/
     ├── design.md         # 設計仕様
-    └── ChangeLog.md      # 変更履歴
+    ├── ChangeLog.md      # 変更履歴
+    └── screenshots/      # ドキュメント用スクリーンショット
 ```
 
-## サンプルアプリ
+## サンプルゲーム
 
-Electron 起動時は `src/games/index.html` が読み込まれ、画面上部のタブで「インベーダー」「ポン」「メビウス」を切り替えられます。
+`games/index.html` をブラウザで開くと、画面上部のタブで「インベーダー」「ポン」「メビウス」を切り替えられます。
 
 ![メビウス ゲームプレイ画面](doc/screenshots/mevius.png)
 
 | 項目 | 内容 |
 |------|------|
-| ウィンドウ | 700×580、タイトル「ゲーム」、メニューバー非表示 |
-| タブ UI | 高さ 32px のコンパクトなアンダーライン型 |
+| 表示領域 | ビューポート全体、タブバー高さ 32px |
+| タブ UI | コンパクトなアンダーライン型 |
 | ゲーム読み込み | 各ゲームは iframe で分離。ポンは初回タブ選択時に遅延読み込み |
 | Canvas | 内部解像度 640×480。CSS でウィンドウ内に自動縮小 |
 | スクロール | シェル・各ゲームで `overflow: hidden`、操作キーで `preventDefault()` |
@@ -55,33 +49,13 @@ Makefile が Node.js v22.14.0 を `.local/` 以下に自動取得するため、
 
 ## 使い方
 
-### 開発（アプリの起動確認）
+### 開発（ローカルサーバー起動）
 
 ```bash
-make dev
+make run
 ```
 
-Electron ウィンドウが開き、サンプルゲームを操作できます。
-
-### インストーラーのビルド
-
-```bash
-make build-win        # Windows ポータブル版 (dist/myapp.exe)
-make build-win-nsis   # Windows インストーラー (dist/setup.exe)
-make build-mac        # macOS DMG (dist/myapp.dmg)
-make build            # 上記 3 つをすべてビルド
-```
-
-`dist/` 以下に配布物が出力されます。
-
-| プラットフォーム | 出力ファイル | 説明 |
-|------------------|--------------|------|
-| Windows (x64) | `dist/myapp.exe` | ポータブル版（インストール不要） |
-| Windows (x64) | `dist/setup.exe` | NSIS インストーラー（インストール先変更可） |
-| macOS | `dist/myapp.dmg` | DMG イメージ（Intel / Apple Silicon） |
-
-> Windows 向けの EXE は、macOS や Linux 上の `electron-builder` からクロスビルドされます。  
-> 初回ビルド時は依存ツールのダウンロードに時間がかかることがあります。
+http://localhost:3000 が起動し、ブラウザでサンプルゲームを操作できます。
 
 ### クリーンアップ
 
@@ -89,18 +63,14 @@ make build            # 上記 3 つをすべてビルド
 make clean
 ```
 
-`.local/`、`node_modules/`、`dist/`、`build/` を削除します。
+`.local/` と `node_modules/` を削除します。
 
 ## カスタマイズの入口
 
-自分のアプリに差し替える際は、主に次のファイルを編集します。
-
 | ファイル | 内容 |
 |----------|------|
-| `src/electron/main.js` | ウィンドウサイズ・タイトル・読み込む HTML のパス |
-| `src/games/index.html` | タブ付きシェル（タブ数・レイアウト） |
-| `src/games/` | アプリの UI（サンプルゲームを置き換え） |
-| `package.json` の `build` セクション | アプリ ID、製品名、インストーラー種別、出力ファイル名 |
+| `games/index.html` | タブ付きシェル（タブ数・レイアウト） |
+| `games/` | 各ゲーム HTML（追加・差し替え） |
 
 詳細な設計は [doc/design.md](doc/design.md)、変更履歴は [doc/ChangeLog.md](doc/ChangeLog.md) を参照してください。
 
@@ -110,10 +80,7 @@ Makefile を使わない場合は、Node.js を用意したうえで次のコマ
 
 ```bash
 npm install
-npm start               # 開発起動
-npm run build:win       # Windows ポータブル版
-npm run build:win-nsis  # Windows インストーラー
-npm run build:mac       # macOS DMG
+npm start   # http://localhost:3000 で開発サーバー起動
 ```
 
 ## ライセンス
