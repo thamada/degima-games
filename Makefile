@@ -1,5 +1,7 @@
 .PHONY: install run clean
 
+.DEFAULT_GOAL := run
+
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 NODE_VERSION := 22.14.0
 LOCAL_DIR := $(ROOT).local
